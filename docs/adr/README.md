@@ -30,25 +30,30 @@ Reading the whole directory costs roughly 400 tokens per record. Reading this in
 |---|---|---|---|---|
 | [0001](0001-record-architecture-decisions.md) | Architectural decisions are recorded as numbered, immutable ADRs; `architecture.md` stays free of rationale | Accepted | `scope` | 2026-08-05 |
 | [0002](0002-one-process-two-planes.md) | One binary containing both planes; the split is logical, with `serve`/`worker` roles reserved for later scale-out | Accepted | `process` `scope` | 2026-08-05 |
-| [0003](0003-audio-never-crosses-a-process-boundary.md) | No PCM-handling component sits across a process boundary from the audio source | Accepted | `audio` `process` `latency` | 2026-08-05 |
 | [0004](0004-colocate-orchestration-with-audio.md) | The turn state machine runs beside VAD/ASR/TTS — a remote component may be a leaf, never the conductor | Accepted | `audio` `process` `latency` | 2026-08-05 |
-| [0005](0005-in-process-vad-asr-tts-via-sherpa-onnx.md) | VAD, ASR and TTS link into the binary via sherpa-onnx; a native segfault kills the process, accepted knowingly | Accepted | `providers` `audio` `process` | 2026-08-05 |
 | [0006](0006-llm-as-external-openai-compatible-service.md) | The LLM is reached over the OpenAI-compatible HTTP interface, streaming with tool calls, endpoint configurable | Accepted | `providers` `process` `ops` | 2026-08-05 |
 | [0007](0007-livekit-as-webrtc-transport.md) | LiveKit provides WebRTC transport; browser-side echo cancellation is a precondition for barge-in | Accepted | `audio` `ops` | 2026-08-05 |
 | [0008](0008-text-core-as-first-class-entrypoint.md) | The conversation core is audio-agnostic and separately addressable, enabling layered eval and text degradation | Accepted | `scope` `providers` | 2026-08-05 |
-| [0009](0009-sentence-level-tts-pipelining.md) | Synthesis is driven per sentence as the LLM streams, so non-streaming TTS is sufficient | Accepted | `latency` `audio` `providers` | 2026-08-05 |
 | [0010](0010-latency-instrumentation-from-phase-one.md) | Eight markers ship before any model; both system response and perceived latency are always reported | Accepted | `latency` `ops` | 2026-08-05 |
 | [0011](0011-no-multi-tenancy.md) | No tenant dimension in any type, table, or interface; personas are configuration, not isolation | Accepted | `scope` `data` | 2026-08-05 |
 | [0012](0012-no-redis.md) | Turn state is an in-memory value with one owner; facts go straight to PostgreSQL | Accepted | `data` `ops` | 2026-08-05 |
 | [0013](0013-compiler-enforced-plane-boundaries.md) | Eight crates; media-plane internals stay private so the plane boundary is a compile error, not a review comment | Accepted | `process` `scope` | 2026-08-05 |
+| [0014](0014-hosted-inference-for-recognition-and-synthesis.md) | Recognition and synthesis at ElevenLabs, the model at xAI; audio crosses a process boundary and VAD alone stays local | Accepted | `providers` `process` `audio` `latency` | 2026-08-08 |
+| [0015](0015-delete-rather-than-retain-local-inference.md) | The local sherpa-onnx recognition and synthesis adapters are deleted, not kept behind configuration | Accepted | `providers` `scope` | 2026-08-08 |
+| [0016](0016-endpointing-stays-local.md) | The end of a turn is decided locally from the same signal that drives interruption; the recogniser is told when to commit | Accepted | `audio` `latency` `providers` | 2026-08-08 |
+| [0017](0017-observability-is-agent-readable-logs.md) | Telemetry is structured log lines read by an agent; no metrics backend, collector or dashboard | Accepted | `ops` `latency` | 2026-08-08 |
 
 ## Superseded
 
-_None yet._ When a record is superseded, move its row here and note the replacement.
+| # | Decision | Status | Tags | Date |
+|---|---|---|---|---|
+| [0003](0003-audio-never-crosses-a-process-boundary.md) | No PCM-handling component sits across a process boundary from the audio source | Superseded by ADR-0014 | `audio` `process` `latency` | 2026-08-05 |
+| [0005](0005-in-process-vad-asr-tts-via-sherpa-onnx.md) | VAD, ASR and TTS link into the binary via sherpa-onnx | Superseded by ADR-0014 | `providers` `audio` `process` | 2026-08-05 |
+| [0009](0009-sentence-level-tts-pipelining.md) | Synthesis is driven per sentence as the LLM streams, so non-streaming TTS is sufficient | Superseded by ADR-0014 | `latency` `audio` `providers` | 2026-08-05 |
 
 ## By tag
 
-`process` 0002 0003 0004 0005 0006 0013 · `audio` 0003 0004 0005 0007 0009 · `latency` 0003 0004 0009 0010 · `providers` 0005 0006 0008 0009 · `data` 0011 0012 · `ops` 0006 0007 0010 0012 · `scope` 0001 0002 0008 0011 0013
+`process` 0002 0003 0004 0005 0006 0013 0014 · `audio` 0003 0004 0005 0007 0009 0014 0016 · `latency` 0003 0004 0009 0010 0014 0016 0017 · `providers` 0005 0006 0008 0009 0014 0015 0016 · `data` 0011 0012 · `ops` 0006 0007 0010 0012 0017 · `scope` 0001 0002 0008 0011 0013 0015
 
 Tags are a closed vocabulary. Adding one requires a decision about what it means.
 

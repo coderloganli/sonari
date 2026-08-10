@@ -4,6 +4,7 @@
 
 | Document | Answers | Read it when |
 |---|---|---|
+| [prd.md](prd.md) | **What it is for.** Scope, requirements, what is deliberately absent | You are deciding whether a change belongs |
 | [architecture.md](architecture.md) | **How the system is built.** Components, domain model, interfaces, state machine, concurrency, failure handling | You are writing code and need to know where it goes |
 | [adr/](adr/) | **Why it is built that way.** One decision per record, with the alternatives that were rejected | You disagree with something, or you are about to change it |
 

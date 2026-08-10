@@ -1,6 +1,6 @@
 # ADR-0009: Drive TTS at sentence granularity
 
-- **Status**: Accepted
+- **Status**: Superseded by ADR-0014
 - **Date**: 2026-08-05
 - **Tags**: `latency`, `audio`, `providers`
 - **Related**: ADR-0005, ADR-0006, ADR-0010

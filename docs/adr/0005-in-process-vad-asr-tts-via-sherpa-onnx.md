@@ -1,6 +1,6 @@
 # ADR-0005: Run VAD, ASR and TTS in-process via sherpa-onnx
 
-- **Status**: Accepted
+- **Status**: Superseded by ADR-0014
 - **Date**: 2026-08-05
 - **Tags**: `providers`, `audio`, `process`
 - **Related**: ADR-0003, ADR-0006, ADR-0008

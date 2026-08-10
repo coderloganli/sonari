@@ -1,6 +1,6 @@
 # ADR-0003: Audio never crosses a process boundary
 
-- **Status**: Accepted
+- **Status**: Superseded by ADR-0014
 - **Date**: 2026-08-05
 - **Tags**: `audio`, `process`, `latency`
 - **Related**: ADR-0004, ADR-0005, ADR-0006

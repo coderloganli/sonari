@@ -1,8 +1,9 @@
 # Sonari Architecture
 
-A self-hosted real-time voice agent. This document describes how the system is built and where code belongs. For why it is built this way, see [ADR index](adr/README.md).
+A real-time voice agent. This document describes how the system is built and
+where code belongs. For why it is built this way, see the [ADR index](adr/README.md).
 
-**Target**: sub-2s response at tens to low hundreds of concurrent calls, English-first, all models self-hosted.
+**Target**: sub-2s response, English-first.
 **Stack**: Rust (Tokio, Axum), LiveKit, PostgreSQL, Docker.
 
 ---
@@ -10,300 +11,184 @@ A self-hosted real-time voice agent. This document describes how the system is b
 ## 1. Deployment
 
 ```
-                          ┌──────────────┐
-                          │   Browser    │
-                          └──┬────────┬──┘
-                             │        │
-           HTTP: start/end   │        │   WebRTC: mic + speaker
-               call, history │        │
-                             │        ▼
-                             │  ┌───────────┐
-                             │  │  livekit  │
-                             │  └─────┬─────┘
-                             │        │
-                             │        │  PCM frames — 50/sec
-                             │        │
-  ┌──────────────────────────▼────────▼─────────────────────────┐
-  │ sonari                                                      │
-  │                                                             │
-  │   ┌── control plane ───┐      ┌── media plane ───────────┐  │
-  │   │                    │      │                          │  │
-  │   │  HTTP API          │      │   VAD ──► ASR ──┐        │  │
-  │   │  demo page         │ ◄────┤                 ▼        │  │
-  │   │  persistence       │ turn │         orchestrator ────┼──┼──┐
-  │   │                    │ facts│                 │        │  │  │
-  │   │                    │      │   mixer ◄── TTS ┘        │  │  │
-  │   └─────────┬──────────┘      └──────────────────────────┘  │  │
-  │             │                                               │  │
-  └─────────────┼───────────────────────────────────────────────┘  │
-                │                                                  │
-                │ SQL                   OpenAI-compatible HTTP      │
-                │                       1 call/turn — text only     │
-                ▼                                                  ▼
-         ┌─────────────┐                                   ┌─────────────┐
-         │  postgres   │                                   │    vllm     │
-         │ transcripts │                                   │ LLM on GPU  │
-         └─────────────┘                                   └─────────────┘
+  ┌─────────────┐
+  │   client    │   uid → token, choose persona, talk
+  └──────┬──────┘
+         │ HTTPS: create session; start/end call
+         │ WebRTC: mic + speaker
+         ▼
+  ┌───────────┐
+  │  livekit  │
+  └─────┬─────┘
+        │ PCM frames — 50/sec
+        ▼
+  ┌──────────────────────────────────────────┐
+  │ sonari — one process                      │
+  │                                           │
+  │   VAD ──► ASR ──► agent loop              │
+  │                       │                   │
+  │   mixer ◄── TTS ◄─────┘                   │
+  └───┬─────────────────┬─────────────────┬───┘
+      │ SQL             │ WebSocket/HTTPS │ HTTPS
+      ▼                 ▼                 ▼
+ ┌──────────┐    ┌──────────────┐  ┌────────────┐
+ │ postgres │    │  ElevenLabs  │  │ LLM        │
+ │          │    │  ASR and TTS │  │ endpoint   │
+ └──────────┘    └──────────────┘  └────────────┘
 ```
 
 | Container | Ours | Role |
 |---|---|---|
-| `sonari` | yes | HTTP API, voice pipeline, demo page. VAD / ASR / TTS in-process (ADR-0005) |
+| `sonari` | yes | HTTP API, voice pipeline, VAD in-process |
 | `livekit` | no | WebRTC transport (ADR-0007) |
-| `postgres` | no | Transcripts, turn facts, usage |
-| `vllm` | no | LLM inference on GPU (ADR-0006) |
+| `postgres` | no | Sessions, turns, transcripts |
 
-Audio flows at 50 frames/sec and never leaves the `sonari` process (ADR-0003). Everything crossing a process boundary is text or a turn-level fact — dozens per call.
+**Audio crosses a process boundary** (ADR-0014). Frames go to recognition as
+they arrive; synthesised audio comes back the same way. Only voice activity
+detection is local, because it runs on every frame and decides both when a turn
+begins and when it ends.
 
-Optional overlay `docker-compose.observability.yml` adds Prometheus and Grafana. Off by default.
-
-**Roles.** One binary, three modes (ADR-0002). `sonari all` is the default and runs both planes in one process. `sonari serve` and `sonari worker` run one plane each, for horizontal scaling. CI exercises both paths.
+**One binary.** The control plane and the media plane are one process
+(ADR-0002); the split is logical.
 
 ---
 
 ## 2. Crates
 
-Eight crates. Media-plane crates keep internals private; the planes communicate only through `sonari-core` types (ADR-0013).
-
-| Crate | Owns | Does not own | Depends on |
-|---|---|---|---|
-| `sonari-core` | Domain types, provider traits, error types | Any implementation, any I/O | — |
-| `sonari-pipeline` | Turn state machine, endpointing policy, sentence segmentation, barge-in, playback queue | Model inference, transport, persistence | `core`, `telemetry` |
-| `sonari-providers` | `AsrEngine` / `TtsEngine` / `LlmClient` / `Vad` implementations, model loading | When to call them | `core`, `telemetry` |
-| `sonari-rtc` | LiveKit rooms, tokens, track binding, PCM in/out | Anything about conversation | `core` |
-| `sonari-store` | PostgreSQL schema, migrations, repositories | Business rules | `core` |
-| `sonari-api` | HTTP routes, DTOs, static demo assets | Persistence details, pipeline internals | `core`, `store` |
-| `sonari-telemetry` | Latency markers, metrics, tracing setup | Interpretation of what it records | — |
-| `sonari` | Composition root, config loading, role subcommands, shutdown | Any logic | all |
-
-`sonari-api` and `sonari-store` must not depend on `sonari-pipeline`, `sonari-providers`, or `sonari-rtc`. Only `sonari` sees both planes.
-
----
-
-## 3. Domain model
-
-Defined in `sonari-core`. No tenant dimension (ADR-0011).
-
-| Type | Meaning | Lifetime |
+| Crate | Owns | Depends on |
 |---|---|---|
-| `Persona` | System prompt, voice, model parameters, enabled tools | Loaded from config at startup |
-| `Session` | One call, from connect to hangup | In memory for its duration; a summary row is persisted |
-| `Turn` | One exchange: user utterance → agent reply | In memory while active; persisted on completion |
-| `Transcript` | Final text of one utterance or reply | Persisted |
-| `TurnFacts` | Timing markers, token usage, interruption flag | Persisted on turn completion |
-| `AudioSegment` | One synthesized sentence, PCM plus metadata | Discarded after playback |
+| `shared-kernel` | Error type, caller identity | — |
+| `sonari-config` | `sonari.toml`: parsing, validation, watching | `providers` |
+| `providers` | VAD on sherpa-onnx; ElevenLabs recognition and synthesis | `voice` |
+| `voice` | The provider traits and the runtime the call path speaks to | `shared-kernel` |
+| `agent` | Prompt assembly, conversation history, the streaming model client | `shared-kernel` |
+| `call/rtc` | LiveKit rooms, tokens, track binding, PCM in/out | `shared-kernel` |
+| `call/speech-runtime` | Per-session speech state, rounds, endpointing policy | `voice`, `agent` |
+| `call/worker` | The media plane: pipeline, mixer, playback | `call/*`, `voice` |
+| `call/control`, `call/execution` | Call lifecycle, dispatch, persistence | `shared-kernel` |
+| `platform/postgres` | Schema, migrations | — |
+| `api`, `app` | HTTP routes; composition root | all |
+| `harness` | Drives one turn from a WAV file, reports the cost | `providers`, `agent` |
 
-Only `Session`, `Turn`, `Transcript`, and `TurnFacts` cross into the control plane. `AudioSegment` and everything below it stay in the media plane.
-
-**In-flight state is never persisted.** Only completed facts reach the database (ADR-0012).
+No credential appears in any provider trait signature. Adapters take their key
+at construction, from the environment.
 
 ---
 
-## 4. Turn lifecycle
-
-The state machine in `sonari-pipeline`. One instance per session, owned by one task.
+## 3. A turn
 
 ```
-                    ┌──────────┐
-                    │   Idle   │
-                    └────┬─────┘
-                         │ session established
-                         ▼
-                  ┌─────────────┐◄──────────────────────┐
-              ┌──►│  Listening  │                       │
-              │   └──────┬──────┘                       │
-              │          │ VAD onset                    │ playback drained
-              │          ▼                              │
-              │   ┌─────────────┐                ┌──────┴──────┐
-              │   │  Capturing  │                │ Responding  │
-              │   └──────┬──────┘                └──────┬──────┘
-              │          │ VAD offset                   │ VAD onset
-              │          ▼                              ▼  (barge-in)
-              │   ┌─────────────┐  hangover      ┌─────────────┐
-              │   │ Endpointing ├───elapsed─────►│ Interrupted │
-              │   └──────┬──────┘                └──────┬──────┘
-              │          │ speech resumed               │ teardown done
-              └──────────┴──────────────────────────────┘
-                                                   (→ Capturing)
+speech onset  → frames stream to recognition
+speech offset → hangover timer
+endpoint      → commit the utterance, take the transcript
+                model streams tokens → synthesis → playback
+barge-in      → playback stops, pending synthesis cancelled
 ```
 
-| State | What runs | Exits when |
-|---|---|---|
-| `Listening` | VAD only. Frames buffered in a short pre-roll ring | VAD reports onset → `Capturing` |
-| `Capturing` | Pre-roll flushed to ASR, then frames stream in; partials arrive | VAD reports offset → `Endpointing` |
-| `Endpointing` | Frames still stream to ASR; hangover timer runs | Timer elapses → `Responding`; speech resumes → `Capturing` |
-| `Responding` | LLM streams, sentences segment and synthesize, segments play | Queue drains → `Listening`; VAD onset → `Interrupted` |
-| `Interrupted` | Playback stopped, unplayed segments dropped, LLM stream and pending synthesis cancelled | Teardown completes → `Capturing` |
+**Endpointing is ours** (ADR-0016). The recogniser is opened with
+`commit_strategy=manual` and told when an utterance ended; it is not asked. The
+same voice activity signal drives interruption, so both ends of a turn come from
+one place.
 
-**Pre-roll.** `Listening` retains a short ring buffer of recent frames, flushed to ASR on transition to `Capturing`, so the first phoneme is not clipped by VAD reaction time. Buffer length is configuration.
+Session state lives in memory for the call's duration. Only completed facts
+reach the database, dispatched off the session task — a database outage degrades
+record-keeping, not conversation.
 
-**Endpointing.** Hangover length trades false endpoints against perceived latency and is configuration. Both effects are measured (ADR-0010).
-
-**Barge-in.** `Interrupted` is entered from the VAD path, not from playback, so it takes effect on the next frame. It must be idempotent: a second onset during teardown is a no-op.
-
----
-
-## 5. Two layers
-
-The conversation core is audio-agnostic and independently usable (ADR-0008).
-
-```
-              ┌───────────────────────────────┐
- text in ────→│  core conversation loop        │────→ text out
-              │  prompt → LLM → tools → memory │
-              └───────────────────────────────┘
-                      ↑                ↓
-voice in → VAD → ASR ─┘                └── sentence split → TTS → playback
-```
-
-The inner layer takes text and returns a token stream. It knows nothing of frames, sentences, or timing. Sentence segmentation belongs to the outer layer, because it exists to drive synthesis (ADR-0009).
-
-Both entrypoints are supported surfaces. The eval harness drives the inner layer directly for answer quality and the outer layer with WAV files for latency and word error rate — neither path needs LiveKit or a browser.
+The ingress channel is bounded. Under load frames are dropped at ingress with a
+counter incremented, never buffered without limit. A commit is never dropped:
+losing a frame costs a word, losing the commit means the turn never ends.
 
 ---
 
-## 6. Provider interfaces
+## 4. Configuration
 
-Declared in `sonari-core`, implemented in `sonari-providers`.
+`sonari.toml` carries what an operator edits: personas and their scenes, the
+prompts wrapped around them, which models to ask for, and the endpointing
+parameters. It is watched — a change is parsed and validated, and only a valid
+result replaces the live one. An invalid file at startup is fatal.
 
-> Shapes below are the intended contract. They must be validated against the `sherpa-onnx` API before being fixed.
+A session resolves its persona once at call start and holds that snapshot, so
+editing a persona affects new calls only.
 
-```rust
-pub trait Vad: Send {
-    fn push(&mut self, frame: &[i16]) -> VadState;   // Silence | Speech
-    fn reset(&mut self);
-}
+The environment carries only what must not be in a file: API keys, the database
+DSN, and where LiveKit is.
 
-pub trait AsrEngine: Send + Sync {
-    fn open(&self, cfg: &AsrConfig) -> Result<Box<dyn AsrStream>>;
-}
-
-pub trait AsrStream: Send {
-    fn push(&mut self, frame: &[i16]) -> Result<()>;
-    fn poll(&mut self) -> Option<AsrEvent>;          // Partial | Final
-    fn finish(&mut self) -> Result<Transcript>;
-}
-
-#[async_trait]
-pub trait TtsEngine: Send + Sync {
-    async fn synthesize(&self, text: &str, voice: &VoiceId) -> Result<AudioSegment>;
-}
-
-#[async_trait]
-pub trait LlmClient: Send + Sync {
-    async fn stream(&self, req: LlmRequest) -> Result<BoxStream<'_, Result<LlmDelta>>>;
-}
-
-pub enum LlmDelta { Token(String), ToolCall(ToolCall), Done(Usage) }
-```
-
-**Asymmetry is intentional.** ASR is push/poll because it is fed at frame rate and produces results on its own schedule. TTS is a single call because it is driven per sentence. `LlmClient` streams and carries `ToolCall` from the outset — retrofitting either would restructure the pipeline (ADR-0006).
-
-### Selected implementations
-
-| Role | Implementation | Notes |
-|---|---|---|
-| VAD | sherpa-onnx built-in | Same runtime as ASR |
-| ASR | NVIDIA Nemotron Speech Streaming En 0.6B | Cache-aware FastConformer. Chunk size tunable at runtime, 80 ms–1.12 s; WER 8.43% → 6.93% across that range. NVIDIA Open Model License |
-| TTS | Piper (Kokoro alternate) | ~40 ms to first audio, RTF 0.03, CPU |
-| LLM | Any OpenAI-compatible endpoint | Self-hosted and hosted differ only by base URL |
-
-ASR chunk size is a runtime latency/accuracy dial; the eval harness plots the curve.
+**No configuration lives in the database.** `docker compose up` on a clean clone
+is sufficient to hold a conversation.
 
 ---
 
-## 7. Concurrency
+## 5. Identity
 
-| Unit | Cardinality | Responsibility |
-|---|---|---|
-| Session task | one per call | Owns the state machine and all turn state. Single owner, no locks |
-| Ingress | one per call | LiveKit track → bounded channel → session task |
-| Inference workers | shared pool | ASR and TTS inference, dispatched via `spawn_blocking` |
-| Playback task | one per call | Drains the segment queue at real-time cadence; checks the interrupt flag each frame |
-| HTTP server | one | Control plane; touches no session state |
+There is no login. A `uid` is a human-typeable string; creating a session with
+one returns a token. The identity is derived from the `uid` rather than
+allocated, so the same `uid` reaches the same history on any device without a
+user table.
 
-**Session state has exactly one owner.** Everything else communicates with it by channel. There is no shared mutable conversation state, therefore no lock ordering and no cross-process consistency problem (ADR-0012).
-
-**Inference must not run on the async runtime.** ONNX inference is blocking CPU work; running it inline would stall unrelated sessions. It is dispatched to a blocking pool sized against available cores.
-
-**Backpressure.** The ingress channel is bounded. If the pipeline cannot keep up, frames are dropped at ingress with a counter incremented — never buffered without limit. Unbounded audio buffering converts a throughput problem into an unbounded-memory problem.
+This identifies, it does not authenticate. Adding real authentication later is a
+new layer in front, not a change to the client contract.
 
 ---
 
-## 8. Latency instrumentation
-
-Emitted by `sonari-telemetry`, present from phase one (ADR-0010).
-
-| Marker | Meaning |
-|---|---|
-| `speech_start` | VAD onset |
-| `speech_last_voiced` | Last frame classified as speech |
-| `speech_end` | Endpoint declared, hangover elapsed |
-| `asr_final` | Final transcript available |
-| `llm_first_token` | First token received |
-| `llm_first_sentence` | First complete sentence segmented |
-| `tts_first_chunk` | First synthesized audio available |
-| `audio_first_frame` | First frame handed to transport |
-
-Two figures, always reported together:
-
-- **System response** — `speech_end` → `audio_first_frame`. The optimization target.
-- **Perceived latency** — `speech_last_voiced` → `audio_first_frame`. What the user waits, including hangover.
-
-**No latency figure appears in any document until it has been measured.**
-
----
-
-## 9. Failure handling
-
-| Failure | Effect | Recovery |
-|---|---|---|
-| LLM unreachable or times out | Turn fails | Spoken error notice; session continues |
-| TTS fails on one sentence | That segment is skipped | Continue with remaining sentences; mark the turn degraded |
-| ASR produces no final transcript | Turn produces nothing | Return to `Listening` without a reply |
-| ASR model fails to load at startup | Voice unavailable | Serve text mode only; report unhealthy (ADR-0008) |
-| Native runtime segfault | **Process terminates** | Container restart. No in-process recovery (ADR-0005) |
-| LiveKit connection lost | Session ends | Client reconnects and starts a new session |
-| PostgreSQL unreachable | Facts not persisted | Calls continue; persistence failures are logged, never block the audio path |
-
-**Persistence never blocks audio.** Writes are dispatched off the session task; a database outage degrades record-keeping, not conversation.
-
----
-
-## 10. Configuration
-
-Files and environment variables only. No configuration in the database — `docker compose up` must be sufficient to hold a conversation.
-
-| Source | Contents |
-|---|---|
-| `sonari.toml` | Personas, VAD thresholds, endpoint hangover, ASR chunk size, voice selection, model paths |
-| Environment | Endpoint URLs, credentials, database DSN, log level |
-| `.env.example` | Every variable, documented, no real values |
-
-Secrets appear only in the environment, never in files under version control.
-
----
-
-## 11. Data model
-
-Completed facts only (ADR-0012), no tenant columns (ADR-0011).
+## 6. Data
 
 | Table | Contents |
 |---|---|
-| `sessions` | One row per call: persona, start, end, outcome |
-| `turns` | One row per completed turn: session, index, timing markers, token usage, interrupted flag |
-| `transcripts` | User utterances and agent replies, linked to a turn |
+| `call_sessions`, `call_events`, `call_event_outbox` | One row per call; events |
+| `llm_sessions`, `llm_messages`, `llm_usage_logs` | Conversation history and usage |
+| `app_error_*` | Recorded failures |
 
-Long-term memory (pgvector) is a later addition and will extend this schema; the `postgres` image is chosen to allow it without replacement.
+pgvector extends this schema when long-term memory lands; the image is chosen to
+allow it without replacement.
 
 ---
 
-## 12. Extension points
+## 7. Observability
 
-**Adding an ASR, TTS, or LLM provider.** Implement the trait in `sonari-providers`, register it in the composition root, select it by configuration. No change to `sonari-pipeline`.
+Observability is for a coding agent, not a dashboard (ADR-0017). Every event is
+one structured JSON line carrying `session_id`, and `turn` where it applies.
 
-**Adding a tool.** Tools are declared per persona and dispatched by the conversation core. A tool is a name, a JSON schema, and a handler; it never touches audio.
+Eight latency markers per turn — `speech_start`, `speech_last_voiced`,
+`speech_end`, `asr_final`, `llm_first_token`, `llm_first_sentence`,
+`tts_first_chunk`, `audio_first_frame` — carry elapsed values as explicit fields
+rather than timestamps to subtract. Two figures are always reported together:
 
-**Changing transport.** All LiveKit-specific code is confined to `sonari-rtc`. The pipeline consumes a PCM stream and produces one; the source is replaceable — the eval harness already substitutes files for a browser.
+- **System response** — `speech_end` → `audio_first_frame`
+- **Perceived latency** — `speech_last_voiced` → `audio_first_frame`
 
-**Splitting the deployment.** Because no crate spans both planes, `sonari serve` and `sonari worker` differ only in what the composition root wires up.
+No latency figure enters any document until it has been measured, and
+measurements come from release builds.
+
+---
+
+## 8. Failure handling
+
+| Failure | Effect | Recovery |
+|---|---|---|
+| Recognition socket fails | The turn fails and says so | Session continues; the failure is returned rather than looking like silence |
+| Synthesis fails | That reply is not spoken | Turn marked degraded |
+| Model endpoint unreachable | Turn fails | Spoken error notice; session continues |
+| LiveKit connection lost | Session ends | Client reconnects and starts a new session |
+| PostgreSQL unreachable | Facts not persisted | Calls continue; persistence never blocks audio |
+
+---
+
+## 9. Extension points
+
+**Another recognition or synthesis provider.** Implement the trait in
+`providers`, construct it in the composition root. No change to the pipeline.
+
+**Another model.** One environment variable — any OpenAI-compatible endpoint
+(ADR-0006).
+
+**Changing transport.** LiveKit-specific code is confined to `call/rtc`. The
+harness already substitutes a file for a client.
+
+---
+
+## 10. Building
+
+The full binary links only on Linux. `libwebrtc` and the speech runtime disagree
+about the C runtime on Windows, and ship separate copies of protobuf that
+collide in some link units. Provider-level tests run natively; anything linking
+the whole application goes through `scripts/dev.sh`.

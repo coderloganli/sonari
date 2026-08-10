@@ -1,6 +1,6 @@
 # Sonari — working notes
 
-A self-hosted real-time voice agent. See [docs/architecture.md](docs/architecture.md).
+A real-time voice agent. See [docs/architecture.md](docs/architecture.md).
 
 ## Retrieving design context
 
