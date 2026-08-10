@@ -1,0 +1,113 @@
+# Copy to sonari.toml and adjust the paths.
+#
+# This file is the source of truth for what an operator edits. It is watched:
+# saving a change validates it and, if valid, replaces the live configuration
+# without a restart. An invalid file is rejected and the previous one keeps
+# running. Model paths are the exception — models load once at startup, so
+# changing them needs a restart.
+#
+# Endpoints, credentials and the database DSN live in the environment, not here.
+
+# How the model is asked to behave. Where it lives and how to authenticate are
+# deployment concerns and come from LLM_BASE_URL and LLM_API_KEY.
+[llm]
+# A non-reasoning model. A reasoning model spends tokens thinking before the
+# first word arrives, which on a phone call is silence the caller sits through.
+model = "grok-4.20-0309-non-reasoning"
+temperature = 0.8
+frequency_penalty = 0.0
+
+# Which models to ask for. Where they live and how to authenticate are
+# deployment concerns: LLM_BASE_URL, LLM_API_KEY and ELEVENLABS_API_KEY.
+# Remove this section to run without voice; the HTTP surface still comes up.
+[models]
+
+# The one model that runs in-process. It decides when a turn starts and when it
+# ends, so it cannot be a round trip away.
+[models.vad]
+model = "models/silero_vad.onnx"
+# Speech probability above which a frame counts as speech.
+threshold = 0.5
+min_silence_seconds = 0.25
+min_speech_seconds = 0.25
+sample_rate_hz = 16000
+num_threads = 1
+
+[models.asr]
+model = "scribe_v2_realtime"
+# Leave unset to let the provider detect the language.
+language = "en"
+
+[models.tts]
+model = "eleven_flash_v2_5"
+# The rate the pipeline carries, requested directly so nothing is resampled.
+sample_rate_hz = 16000
+
+# When a turn starts and when it ends. Tuned by ear against real calls.
+[endpointing]
+# Silence after speech before the turn is considered over.
+silence_flush_ms = 700
+# Silence with no speech at all before the agent speaks first.
+silence_force_agent_ms = 8000
+# Shortest utterance worth sending. Below this it is a cough.
+min_utterance_ms = 300
+# Speech must persist this long before a turn opens, or brief background noise
+# starts turns nobody began.
+min_speech_confirm_ms = 150
+
+# The instructions wrapped around a persona. `conversation_system` is what makes
+# this a spoken conversation rather than a chat: without a length constraint a
+# model will happily produce a paragraph, which becomes twenty seconds of speech
+# nobody wants to sit through.
+[prompts]
+conversation_system = '''
+You are speaking on a phone call. Everything you say is read aloud.
+
+Keep replies to one or two short sentences. Never use lists, headings, code or
+emoji — none of it survives being spoken. Do not describe what you are doing.
+Ask at most one question, and only when you actually want an answer.
+If you did not understand, say so plainly and briefly.
+'''
+character = '''
+You are {{name}}. {{persona}}
+Your manner: {{personality_traits}}
+How you speak: {{speaking_style}}
+'''
+scene = '''
+Where you are: {{location}}
+The person you are talking to: {{user_role}}
+Between you: {{relationship}}
+'''
+welcome = '''
+Open the call with a single short greeting, under ten words.
+'''
+
+# Who the agent is. At least one persona is needed before a call can start.
+# The id a client uses is derived from the name, so adding or reordering entries
+# leaves existing sessions pointing at the same persona.
+[[persona]]
+name = "companion"
+# Speaker id within the synthesis model.
+voice = "EXAVITQu4vr4xnSDxMaL"
+language = "en"
+
+[persona.prompt]
+# How this character relates to the person on the other end.
+relationship_stance = "A warm, attentive companion."
+persona = "You are easy to talk to, curious about the person you are speaking with, and comfortable with silence."
+age = 30
+occupation = "writer"
+marital_status = "single"
+private_interests = ["long walks", "second-hand bookshops"]
+personality_traits = "Patient, dry sense of humour, rarely interrupts."
+speaking_style = "Short sentences. Plain words. Asks one question at a time."
+
+[persona.scene]
+name = "evening-call"
+location = "a quiet flat in the evening"
+user_role = "a friend who called to talk"
+relationship = "old friends who have not spoken in a while"
+environment = "rain against the window, a kettle somewhere"
+goal = "let the other person unwind and feel heard"
+opening_event = "picking up the phone mid-thought"
+time_period_mode = "unspecified"

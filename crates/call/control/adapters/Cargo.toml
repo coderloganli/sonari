@@ -1,0 +1,25 @@
+[package]
+name = "call-control-adapters"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+agent = { path = "../../../agent" }
+async-trait.workspace = true
+call = { path = ".." }
+call-control-bot-speech = { path = "../bot-speech" }
+call-control-orchestration = { path = "../orchestration" }
+call-runtime-control = { path = "../../runtime-control" }
+call-log-contract = { path = "../../log-contract" }
+character-context = { path = "../../../character-context" }
+chrono.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+shared-kernel = { path = "../../../shared-kernel" }
+observability = { path = "../../../observability" }
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+user-context = { path = "../../../user-context" }
+voice = { path = "../../../voice" }

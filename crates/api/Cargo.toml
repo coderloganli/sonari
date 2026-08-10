@@ -1,0 +1,37 @@
+[package]
+name = "api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+agent = { path = "../agent" }
+async-trait.workspace = true
+axum = { workspace = true, features = ["multipart"] }
+base64 = "0.22.1"
+bytes = "1"
+uuid = { version = "1", features = ["v4"] }
+call = { path = "../call/control" }
+call-log-contract = { path = "../call/log-contract" }
+call-execution = { path = "../call/execution" }
+rtc-control-contract = { path = "../call/rtc/control-contract" }
+chrono.workspace = true
+serde.workspace = true
+serde_json_canonicalizer = "0.3.2"
+serde_json.workspace = true
+sha2.workspace = true
+speech-runtime = { path = "../call/speech-runtime" }
+tokio.workspace = true
+tokio-stream = "0.1.17"
+tracing.workspace = true
+auth = { path = "../auth" }
+auth-console-contract = { path = "../auth/console-contract" }
+observability = { path = "../observability" }
+percent-encoding = "2.3.2"
+shared-kernel = { path = "../shared-kernel" }
+voice = { path = "../voice" }
+
+[dev-dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+tower = "0.5.2"

@@ -1,0 +1,25 @@
+[package]
+name = "call"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+call-runtime-control = { path = "../runtime-control" }
+chrono.workspace = true
+character-context = { path = "../../character-context" }
+call-control-bot-speech = { path = "./bot-speech" }
+call-control-orchestration = { path = "./orchestration" }
+call-log-contract = { path = "../log-contract" }
+call-speech-contract = { path = "../speech-contract" }
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rtc-control-contract = { path = "../rtc/control-contract" }
+shared-kernel = { path = "../../shared-kernel" }
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

@@ -1,0 +1,42 @@
+[package]
+name = "app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+agent = { path = "../agent" }
+api = { path = "../api" }
+auth = { path = "../auth" }
+axum.workspace = true
+call = { path = "../call/control" }
+call-control-orchestration = { path = "../call/control/orchestration" }
+call-control-adapters = { path = "../call/control/adapters" }
+call-execution = { path = "../call/execution" }
+call-log-contract = { path = "../call/log-contract" }
+call-runtime-control = { path = "../call/runtime-control" }
+worker = { path = "../call/worker" }
+character-context = { path = "../character-context" }
+chrono.workspace = true
+observability = { path = "../observability" }
+notify.workspace = true
+toml.workspace = true
+platform-postgres = { path = "../platform/postgres" }
+providers = { path = "../providers" }
+sonari-config = { path = "../config" }
+rtc = { path = "../call/rtc" }
+rtc-control-contract = { path = "../call/rtc/control-contract" }
+rand.workspace = true
+serde.workspace = true
+sha2.workspace = true
+serde_json.workspace = true
+shared-kernel = { path = "../shared-kernel" }
+speech-runtime = { path = "../call/speech-runtime" }
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tower-http = { version = "0.6.8", features = ["fs"] }
+user-context = { path = "../user-context" }
+voice = { path = "../voice" }

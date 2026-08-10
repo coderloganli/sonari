@@ -1,0 +1,31 @@
+[package]
+name = "worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "worker"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+call-execution = { path = "../execution" }
+call-log-contract = { path = "../log-contract" }
+call-runtime-control = { path = "../runtime-control" }
+call-runtime-context = { path = "../runtime-context" }
+speech-runtime = { path = "../speech-runtime" }
+voice = { path = "../../voice" }
+agent = { path = "../../agent" }
+chrono.workspace = true
+futures.workspace = true
+hound.workspace = true
+observability = { path = "../../observability" }
+reqwest.workspace = true
+rtc = { path = "../rtc" }
+serde.workspace = true
+serde_json.workspace = true
+shared-kernel = { path = "../../shared-kernel" }
+tokio.workspace = true
+tracing.workspace = true

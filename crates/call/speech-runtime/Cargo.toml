@@ -1,0 +1,24 @@
+[package]
+name = "speech-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+call-control-bot-speech = { path = "../control/bot-speech" }
+call-log-contract = { path = "../log-contract" }
+call-runtime-control = { path = "../runtime-control" }
+call-speech-contract = { path = "../speech-contract" }
+call-runtime-context = { path = "../runtime-context" }
+chrono.workspace = true
+futures.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+agent = { path = "../../agent" }
+redis = { version = "0.32.7", features = ["tokio-comp"] }
+serde_json.workspace = true
+shared-kernel = { path = "../../shared-kernel" }
+sqlx.workspace = true
+voice = { path = "../../voice" }

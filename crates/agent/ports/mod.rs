@@ -1,0 +1,204 @@
+use async_trait::async_trait;
+use shared_kernel::AppResult;
+
+use crate::domain::{
+    AgentCallerIdentity, AgentMessage, AgentMessageArchive, AgentSession, LlmProviderConfig,
+    LlmUsageLog, LlmUsageStats, PartnerConversationPromptOverride, PromptTemplate,
+    PromptTemplateKey, ProviderKey, SessionUsageSummary,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateAgentSessionRequest {
+    pub caller: AgentCallerIdentity,
+    pub character_id: i64,
+    pub timezone: String,
+    pub scene_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateAgentSessionResult {
+    pub session_id: String,
+}
+
+#[async_trait]
+pub trait LlmProviderConfigRepository: Send + Sync {
+    async fn get_by_key(&self, provider_key: ProviderKey) -> AppResult<Option<LlmProviderConfig>>;
+    async fn list_all(&self) -> AppResult<Vec<LlmProviderConfig>>;
+    async fn upsert(&self, config: &LlmProviderConfig) -> AppResult<LlmProviderConfig>;
+}
+
+#[async_trait]
+impl<T> LlmProviderConfigRepository for std::sync::Arc<T>
+where
+    T: LlmProviderConfigRepository + ?Sized,
+{
+    async fn get_by_key(&self, provider_key: ProviderKey) -> AppResult<Option<LlmProviderConfig>> {
+        (**self).get_by_key(provider_key).await
+    }
+    async fn list_all(&self) -> AppResult<Vec<LlmProviderConfig>> {
+        (**self).list_all().await
+    }
+    async fn upsert(&self, config: &LlmProviderConfig) -> AppResult<LlmProviderConfig> {
+        (**self).upsert(config).await
+    }
+}
+
+#[async_trait]
+pub trait PromptTemplateRepository: Send + Sync {
+    async fn get_by_key(&self, key: PromptTemplateKey) -> AppResult<Option<PromptTemplate>>;
+    async fn list_all(&self) -> AppResult<Vec<PromptTemplate>>;
+    async fn upsert(&self, template: &PromptTemplate) -> AppResult<PromptTemplate>;
+}
+
+#[async_trait]
+impl<T> PromptTemplateRepository for std::sync::Arc<T>
+where
+    T: PromptTemplateRepository + ?Sized,
+{
+    async fn get_by_key(&self, key: PromptTemplateKey) -> AppResult<Option<PromptTemplate>> {
+        (**self).get_by_key(key).await
+    }
+    async fn list_all(&self) -> AppResult<Vec<PromptTemplate>> {
+        (**self).list_all().await
+    }
+    async fn upsert(&self, template: &PromptTemplate) -> AppResult<PromptTemplate> {
+        (**self).upsert(template).await
+    }
+}
+
+#[async_trait]
+pub trait PartnerConversationPromptOverrideRepository: Send + Sync {
+    async fn get_by_partner_id(
+        &self,
+        partner_id: i64,
+    ) -> AppResult<Option<PartnerConversationPromptOverride>>;
+    async fn upsert(
+        &self,
+        config: &PartnerConversationPromptOverride,
+    ) -> AppResult<PartnerConversationPromptOverride>;
+    async fn delete_by_partner_id(&self, partner_id: i64) -> AppResult<()>;
+}
+
+#[async_trait]
+pub trait AgentSessionRepository: Send + Sync {
+    async fn create(&self, session: &AgentSession) -> AppResult<AgentSession>;
+    async fn get_by_id(&self, session_id: &str) -> AppResult<Option<AgentSession>>;
+    async fn end(&self, session_id: &str) -> AppResult<()>;
+}
+
+#[async_trait]
+pub trait AgentMessageRepository: Send + Sync {
+    async fn append(&self, message: &AgentMessage) -> AppResult<AgentMessage>;
+    async fn list_recent(
+        &self,
+        session_id: &str,
+        recent_turns: i32,
+    ) -> AppResult<Vec<AgentMessage>>;
+    async fn list_all(&self, session_id: &str) -> AppResult<Vec<AgentMessage>>;
+    async fn next_turn_number(&self, session_id: &str) -> AppResult<i32>;
+}
+
+#[async_trait]
+pub trait AgentArchiveRepository: Send + Sync {
+    async fn create(&self, archive: &AgentMessageArchive) -> AppResult<AgentMessageArchive>;
+}
+
+#[async_trait]
+pub trait UsageLogRepository: Send + Sync {
+    async fn create(&self, log: &LlmUsageLog) -> AppResult<LlmUsageLog>;
+    async fn get_usage_stats(&self) -> AppResult<LlmUsageStats>;
+    async fn summarize_session(&self, session_id: &str) -> AppResult<SessionUsageSummary>;
+}
+
+#[async_trait]
+pub trait AgentSettingsRepository: Send + Sync {
+    async fn get_recent_turns(&self) -> AppResult<i32>;
+    async fn set_recent_turns(&self, recent_turns: i32) -> AppResult<()>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LlmRequestMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LlmCompletionRequest {
+    pub endpoint_url: String,
+    pub api_key: String,
+    pub model_name: String,
+    pub temperature: f64,
+    pub frequency_penalty: f64,
+    pub messages: Vec<LlmRequestMessage>,
+    pub max_tokens: Option<i32>,
+    /// Tools the model may call. Empty means none are offered.
+    pub tools: Vec<ToolDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LlmCompletionResponse {
+    pub content: String,
+    pub prompt_tokens: i32,
+    pub completion_tokens: i32,
+}
+
+/// A tool the model may call. Declared per persona and dispatched by the
+/// conversation loop; it never touches audio.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    /// JSON Schema for the arguments.
+    pub parameters: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    /// Raw JSON, assembled from the fragments the stream delivers.
+    pub arguments: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LlmUsage {
+    pub prompt_tokens: i32,
+    pub completion_tokens: i32,
+}
+
+/// One piece of a reply as it is produced.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LlmDelta {
+    /// Text to speak, as soon as it exists.
+    Token(String),
+    /// A completed tool call. Fragments are assembled before this is emitted.
+    ToolCall(ToolCall),
+    /// The reply is finished. Usage is whatever the endpoint reported.
+    Done(LlmUsage),
+}
+
+pub type LlmStream = std::pin::Pin<Box<dyn futures::Stream<Item = AppResult<LlmDelta>> + Send>>;
+
+#[async_trait]
+pub trait LlmGateway: Send + Sync {
+    /// Streams a reply. Tokens arrive as they are generated so that synthesis
+    /// can begin on the first sentence rather than the last token.
+    async fn stream(&self, request: LlmCompletionRequest) -> AppResult<LlmStream>;
+}
+
+pub trait Clock: Send + Sync {
+    fn now(&self) -> chrono::DateTime<chrono::Utc>;
+}
+
+pub trait IdGenerator: Send + Sync {
+    fn next_session_id(&self) -> String;
+}
+
+#[async_trait]
+pub trait AgentCallControlPort: Send + Sync {
+    async fn create_call_session(
+        &self,
+        request: CreateAgentSessionRequest,
+    ) -> AppResult<CreateAgentSessionResult>;
+    async fn generate_welcome_message(&self, agent_session_id: &str) -> AppResult<String>;
+}

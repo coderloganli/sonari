@@ -1,0 +1,7 @@
+.git
+target/
+node_modules/
+.env
+*.log
+# Models are mounted at runtime, never baked into the image.
+models/

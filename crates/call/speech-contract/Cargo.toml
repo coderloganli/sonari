@@ -1,0 +1,9 @@
+[package]
+name = "call-speech-contract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+shared-kernel = { path = "../../shared-kernel" }

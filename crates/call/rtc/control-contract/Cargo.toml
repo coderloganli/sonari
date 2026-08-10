@@ -1,0 +1,10 @@
+[package]
+name = "rtc-control-contract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+serde.workspace = true
+shared-kernel = { path = "../../../shared-kernel" }

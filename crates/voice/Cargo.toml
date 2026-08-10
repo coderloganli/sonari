@@ -1,0 +1,29 @@
+[package]
+name = "voice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aes-gcm-siv = "0.11.1"
+async-trait.workspace = true
+base64 = "0.22.1"
+bytes = "1.10.1"
+character-context = { path = "../character-context" }
+chrono.workspace = true
+futures.workspace = true
+hmac = "0.12.1"
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha1 = "0.10.6"
+sha2.workspace = true
+shared-kernel = { path = "../shared-kernel" }
+sqlx.workspace = true
+tokio.workspace = true
+tokio-tungstenite = { version = "0.20.1", features = ["rustls-tls-webpki-roots"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

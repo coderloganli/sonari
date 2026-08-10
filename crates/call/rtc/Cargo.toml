@@ -1,0 +1,21 @@
+[package]
+name = "rtc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+async-trait.workspace = true
+rtc-control-contract = { path = "./control-contract" }
+shared-kernel = { path = "../../shared-kernel" }
+libwebrtc.workspace = true
+livekit.workspace = true
+livekit-api.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tokio-stream = "0.1.17"
+tracing.workspace = true

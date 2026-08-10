@@ -1,0 +1,23 @@
+[package]
+name = "probe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sonari-probe"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+hound.workspace = true
+libwebrtc.workspace = true
+livekit.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

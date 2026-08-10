@@ -1,0 +1,23 @@
+[package]
+name = "auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+alibaba-cloud-sdk-rust = "0.1.18"
+argon2.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+jsonwebtoken.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+auth-console-contract = { path = "./console-contract" }
+shared-kernel = { path = "../shared-kernel" }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

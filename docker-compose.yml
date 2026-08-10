@@ -1,0 +1,84 @@
+services:
+  sonari:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    environment:
+      SERVER_HOST: 0.0.0.0
+      DATABASE_DSN: postgres://${POSTGRES_USER:-sonari}:${POSTGRES_PASSWORD:-sonari}@postgres:5432/${POSTGRES_DB:-sonari}
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
+      SERVER_INSTANCE_ID: ${SERVER_INSTANCE_ID:-sonari-local}
+      # Multi-instance routing leftovers; the host must match SERVER_INSTANCE_ID.
+      INTERNAL_RUNTIME_ADVERTISE_URL: http://${SERVER_INSTANCE_ID:-sonari-local}:8080
+      RUNTIME_OWNER_ID: ${RUNTIME_OWNER_ID:-sonari-local}
+      VOICE_SECRETS_KEY: ${VOICE_SECRETS_KEY:-dev-voice-secrets-key}
+      INTERNAL_RUNTIME_SECRET: ${INTERNAL_RUNTIME_SECRET:-dev-internal-secret}
+      # Inference is reached over the network. Keys never enter sonari.toml, and
+      # the service refuses to start without them rather than failing on the
+      # first call.
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:?ELEVENLABS_API_KEY must be set}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.x.ai/v1/chat/completions}
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY must be set}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      # The voice activity model and the configuration are supplied at runtime.
+      - ./models:/app/models:ro
+      - ./sonari.toml:/app/sonari.toml:ro
+    ports:
+      - "8080:8080"
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sonari}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sonari}
+      POSTGRES_DB: ${POSTGRES_DB:-sonari}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sonari}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  livekit:
+    image: livekit/livekit-server:latest
+    # Dev mode binds 7880 and accepts the devkey/secret pair. Not for deployment.
+    command: --dev --bind 0.0.0.0
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+
+  # Not started by `docker compose up`. The full binary links only on Linux, so
+  # anything covering it is compiled and tested here. The named volumes keep the
+  # build cache between runs, which is the difference between a cold minute and
+  # an incremental few seconds.
+  dev:
+    profiles: ["dev"]
+    image: rust:1.95-bookworm
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - dev-cargo-registry:/usr/local/cargo/registry
+      - dev-cargo-git:/usr/local/cargo/git
+      - dev-target:/workspace/target
+    environment:
+      SONARI_MODELS_DIR: /workspace/models
+    # The base image ships neither; CI installs them the same way.
+    entrypoint: ["/bin/sh", "-c", "rustup component add clippy rustfmt >/dev/null 2>&1; exec \"$$@\"", "--"]
+    command: sleep infinity
+
+volumes:
+  postgres-data:
+  dev-cargo-registry:
+  dev-cargo-git:
+  dev-target:

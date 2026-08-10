@@ -1,0 +1,18 @@
+[package]
+name = "platform-postgres"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+auth = { path = "../../auth" }
+auth-console-contract = { path = "../../auth/console-contract" }
+chrono.workspace = true
+observability = { path = "../../observability" }
+serde.workspace = true
+serde_json.workspace = true
+shared-kernel = { path = "../../shared-kernel" }
+sqlx.workspace = true
+tokio.workspace = true

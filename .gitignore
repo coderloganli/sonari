@@ -1,0 +1,33 @@
+# Build
+target/
+node_modules/
+dist/
+build/
+**/xcuserdata/
+*.xcuserstate
+
+# Environment — only .env.example is committed
+.env
+.env.local
+.env.*.local
+
+# Models are downloaded, never committed
+models/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local artifacts
+.tmp/
+*.log
+*.pid
+
+# Operator configuration — only sonari.toml.example is committed
+sonari.toml

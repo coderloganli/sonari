@@ -1,0 +1,14 @@
+[package]
+name = "call-control-orchestration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+call-runtime-control = { path = "../../runtime-control" }
+shared-kernel = { path = "../../../shared-kernel" }
+call-control-bot-speech = { path = "../bot-speech" }
+
+[dev-dependencies]
+tokio.workspace = true
