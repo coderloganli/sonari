@@ -2304,6 +2304,10 @@ where
         session: &mut StoredSpeechSession,
         reason: &str,
     ) -> AppResult<()> {
+        // The reason travels into the call events, but a failure this
+        // consequential — it stops the session and, it appears, the next call —
+        // should also be visible to anyone reading the service log.
+        tracing::warn!(%speech_session_id, %reason, "speech session failed");
         session.phase = SpeechSessionPhase::Failed;
         session.active_turn = None;
         self.session_store

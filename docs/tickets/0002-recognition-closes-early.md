@@ -60,6 +60,47 @@ half-open recognition socket with it.
 **Not the network.** From the same compose network, `api.elevenlabs.io` answers
 in 150 ms.
 
+## Narrowed to one difference: the service image
+
+Instrumenting the open path (`opening recognition session` before the handshake,
+`recognition session open` after, and a line on every task exit) shows this, for
+a whole run:
+
+```
+1 × opening recognition session
+1 × recognition task started
+0 × recognition session open      ← the handshake never completes
+0 × recognition session ended     ← the task did not return cleanly
+0 × recognition session failed    ← and it did not error
+1 × speech session failed
+```
+
+Neither exit line appears, so **the task is cancelled while still connecting** —
+which is why the failure left no trace before this logging existed.
+
+The same code, key and network succeed from a different container:
+
+```
+$ docker compose --profile dev run --rm dev ./target/release/sonari-eval evals/clips/baseline-question.wav
+"transcript":"What time do you close on Sundays?"
+```
+
+And the service container itself reaches the host:
+
+```
+$ docker compose exec sonari openssl s_client -connect api.elevenlabs.io:443 -brief
+CONNECTION ESTABLISHED   TLSv1.3   CN = elevenlabs.io
+```
+
+So it is not the network, not DNS, not the key, not the request, and not missing
+CA certificates — the runtime image installs them. What differs is the image
+itself: `debian:bookworm-slim` with `ca-certificates`, `libstdc++6` and
+`libglib2.0-0`, against the full Rust image where the same binary works.
+
+**Next step:** trace the runtime's ASR open path layer by layer in the service
+image — which timeout fires, and which layer discards the stream handle — since
+the cancellation currently hides whatever the connect would have reported.
+
 ## The two questions
 
 1. **What closes the speech session a second in?** Nothing in the harness does
