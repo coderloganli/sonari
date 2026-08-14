@@ -13,7 +13,7 @@ pub use adapters::postgres::{
     PostgresPartnerConversationPromptOverrideRepository, PostgresPromptTemplateRepository,
 };
 pub use application::{
-    AgentDependencies, AgentRuntimeUseCases, AgentService, ChatCommand,
+    AgentDependencies, AgentRuntimeUseCases, AgentService, ChatCommand, ChatOutcome,
     PartnerConversationPromptConfigView, UpdateAdminConfigCommand,
     UpdatePartnerConversationPromptConfigCommand,
 };

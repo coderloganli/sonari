@@ -84,6 +84,55 @@ pub struct PendingAsrRound {
     pub commit_started_at_ms: Option<i64>,
     #[serde(default)]
     pub force_agent_deadline_at_ms: Option<i64>,
+    /// The speech that produced this round, captured when it was committed.
+    ///
+    /// The session's own slot belongs to whatever the caller is saying now; a
+    /// caller who starts a second sentence before this round's final arrives
+    /// would otherwise have their timings reported against this one — which is
+    /// precisely the split-utterance case the evaluation set exists to measure.
+    #[serde(default)]
+    pub turn_timings: TurnTimings,
+}
+
+/// When each stage of the current turn happened, as epoch milliseconds.
+///
+/// ADR-0010 asks for eight markers per turn carried as elapsed values rather
+/// than timestamps a reader has to subtract. They are recorded here because the
+/// session is the only thing that spans a whole turn: speech begins in one call
+/// and the reply finishes in another, and nothing else sees both.
+///
+/// Recording only. Nothing here changes what a turn does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct TurnTimings {
+    pub speech_start_at_ms: Option<i64>,
+    pub speech_last_voiced_at_ms: Option<i64>,
+    pub speech_end_at_ms: Option<i64>,
+    pub asr_final_at_ms: Option<i64>,
+}
+
+impl TurnTimings {
+    /// Elapsed milliseconds from the start of speech, which is the origin every
+    /// marker is reported against so that all of them are non-negative and read
+    /// in order.
+    pub fn elapsed_from_start(&self, at_ms: Option<i64>) -> Option<f64> {
+        Some((at_ms? - self.speech_start_at_ms?) as f64)
+    }
+}
+
+/// When the model produced its first token and first complete sentence, as
+/// epoch milliseconds. Measured inside the model call and carried to the reply
+/// stream, which emits the turn summary but never sees the model.
+///
+/// Empty for server-initiated turns: there was no model call to time.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ModelTimings {
+    pub first_token_at_ms: Option<i64>,
+    pub first_sentence_at_ms: Option<i64>,
+}
+
+/// Wall clock in epoch milliseconds.
+pub fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,6 +166,9 @@ pub struct StoredSpeechSession {
     /// 候选期缓冲的原始帧;确认时整段并入 utterance(前缀回溯,不丢说话开头)。
     #[serde(default)]
     pub candidate_pcm: Vec<i16>,
+    /// See [`TurnTimings`]. Observation only.
+    #[serde(default)]
+    pub turn_timings: TurnTimings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +179,7 @@ struct PendingRoundCommitRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ForcedTranscriptTurn {
+    turn_timings: TurnTimings,
     round_id: String,
     transcript: String,
 }
@@ -154,6 +207,7 @@ where
                 latest_partial_transcript: String::new(),
                 commit_started_at_ms: None,
                 force_agent_deadline_at_ms: None,
+                turn_timings: TurnTimings::default(),
             },
         })
         .collect())
@@ -420,9 +474,14 @@ pub struct AgentTurnRequest {
     pub user_message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// No `Eq`: the timings are floating point.
+#[derive(Debug, Clone, PartialEq)]
 pub struct AgentTurnResult {
     pub reply_text: String,
+    /// Two of ADR-0010's markers, measured inside the model call because that
+    /// is the only place they exist.
+    pub first_token_at_ms: Option<i64>,
+    pub first_sentence_at_ms: Option<i64>,
 }
 
 #[async_trait]
@@ -1228,6 +1287,11 @@ struct PendingTranscriptTurn {
     agent_session_id: String,
     round_id: String,
     transcript: String,
+    // Taken where the round is still the current one. The session holds a single
+    // slot, and a caller who starts speaking again before this turn reaches the
+    // model would otherwise have their utterance's timings reported against this
+    // one.
+    turn_timings: TurnTimings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1355,15 +1419,16 @@ where
         Ok(session)
     }
 
-    async fn spawn_transcript_turn(
-        &self,
-        speech_session_id: String,
-        session_id: i64,
-        voice: String,
-        agent_session_id: String,
-        round_id: String,
-        transcript: String,
-    ) {
+    async fn spawn_transcript_turn(&self, turn: PendingTranscriptTurn) {
+        let PendingTranscriptTurn {
+            speech_session_id,
+            session_id,
+            voice,
+            agent_session_id,
+            round_id,
+            transcript,
+            turn_timings,
+        } = turn;
         let session_store = self.session_store.clone();
         let events = self.events.clone();
         let voice_runtime = self.voice_runtime.clone();
@@ -1392,6 +1457,7 @@ where
                 transcript,
                 true,
                 state_gate.clone(),
+                turn_timings,
             )
             .await;
             if let Err(error) = result {
@@ -1481,6 +1547,8 @@ where
                 true,
                 Some(started_tx),
                 state_gate.clone(),
+                ModelTimings::default(),
+                TurnTimings::default(),
             )
             .await;
             if let Err(error) = result {
@@ -2048,6 +2116,13 @@ where
                     round_id,
                     transcript,
                 } => {
+                    let mut round_timings = session
+                        .pending_rounds
+                        .iter()
+                        .find(|pending| pending.round_id == round_id)
+                        .map(|pending| pending.turn_timings)
+                        .unwrap_or_default();
+                    round_timings.asr_final_at_ms = Some(now_ms());
                     match session.remove_pending_round_id(&round_id) {
                         Ok(()) => {
                             state_dirty = true;
@@ -2077,6 +2152,7 @@ where
                             agent_session_id: session.agent_session_id.clone(),
                             round_id: round_id.clone(),
                             transcript: transcript.clone(),
+                            turn_timings: round_timings,
                         });
                     }
                     if resume_listening_after_final && !session.deferred_flush {
@@ -2165,6 +2241,10 @@ where
         }
 
         if let Some(turn) = session.take_forced_transcript_turn_if_overdue(now_millis()) {
+            // A forced final is still a final: without this the turn completes
+            // and reports no recognition time at all.
+            let mut round_timings = turn.turn_timings;
+            round_timings.asr_final_at_ms = Some(now_ms());
             state_dirty = true;
             if spawn_transcript_turns {
                 transcript_turns.push(PendingTranscriptTurn {
@@ -2174,6 +2254,7 @@ where
                     agent_session_id: session.agent_session_id.clone(),
                     round_id: turn.round_id.clone(),
                     transcript: turn.transcript.clone(),
+                    turn_timings: round_timings,
                 });
             }
             if resume_listening_after_final && !session.deferred_flush {
@@ -2209,15 +2290,7 @@ where
                 .await?;
         }
         for turn in transcript_turns {
-            self.spawn_transcript_turn(
-                turn.speech_session_id,
-                turn.session_id,
-                turn.voice,
-                turn.agent_session_id,
-                turn.round_id,
-                turn.transcript,
-            )
-            .await;
+            self.spawn_transcript_turn(turn).await;
         }
         if let Some(message) = session_failure {
             return Err(AppError::unavailable(message));
@@ -2494,6 +2567,9 @@ async fn run_transcript_turn<S, E>(
     transcript: String,
     interruptible: bool,
     state_gate: Arc<Mutex<()>>,
+    // Captured when the round's final arrived, not read here: by now the caller
+    // may already have started the next utterance.
+    turn_timings: TurnTimings,
 ) -> AppResult<()>
 where
     S: SpeechSessionStorePort + Send + Sync,
@@ -2534,13 +2610,15 @@ where
     )
     .await?;
 
-    let reply_text = agent_turn
+    let agent_result = agent_turn
         .chat_once(AgentTurnRequest {
             session_id: agent_session_id,
             user_message: transcript,
         })
-        .await?
-        .reply_text;
+        .await?;
+    let reply_text = agent_result.reply_text;
+    let llm_first_token_at_ms = agent_result.first_token_at_ms;
+    let llm_first_sentence_at_ms = agent_result.first_sentence_at_ms;
     if reply_text.trim().is_empty() {
         publish_log_event(
             &events,
@@ -2579,6 +2657,11 @@ where
         false,
         None,
         state_gate,
+        ModelTimings {
+            first_token_at_ms: llm_first_token_at_ms,
+            first_sentence_at_ms: llm_first_sentence_at_ms,
+        },
+        turn_timings,
     )
     .await
 }
@@ -2597,6 +2680,10 @@ async fn run_tts_reply_stream<S, E>(
     log_server_turn: bool,
     start_ack: Option<watch::Sender<TurnStartState>>,
     state_gate: Arc<Mutex<()>>,
+    model_timings: ModelTimings,
+    // Captured when this turn was taken, not read at the end: the session's slot
+    // belongs to whichever utterance is current by then.
+    turn_timings: TurnTimings,
 ) -> AppResult<()>
 where
     S: SpeechSessionStorePort + Send + Sync,
@@ -2681,6 +2768,7 @@ where
 
     let mut chunk_count: u64 = 0;
     let mut sample_count: u64 = 0;
+    let mut tts_first_chunk_at_ms = None;
     let mut sample_rate_hz: Option<u32> = None;
     let mut channels: Option<u16> = None;
 
@@ -2692,6 +2780,7 @@ where
         ensure_reply_stream_active(&session_store, &speech_session_id, &round_id, &state_gate)
             .await?;
         if chunk_count == 0 {
+            tts_first_chunk_at_ms = Some(now_ms());
             publish_log_event(
                 &events,
                 session_id,
@@ -2749,6 +2838,59 @@ where
         }),
     )
     .await?;
+    // One line per turn, carrying every marker as elapsed milliseconds from the
+    // start of speech, plus the two figures ADR-0010 requires to be reported
+    // together. One event rather than eight: a reader correlates a single line,
+    // and the two derived figures are computed where the timings are known
+    // instead of by everyone who reads them.
+    if turn_timings.speech_start_at_ms.is_some()
+        && let Ok(Some(session)) = session_store.get_session(&speech_session_id).await
+    {
+        let timings = turn_timings;
+        let elapsed = |at| timings.elapsed_from_start(at);
+        let audio_first_frame_ms: Option<f64> = None;
+        let system_response_ms = match (
+            elapsed(tts_first_chunk_at_ms),
+            elapsed(timings.speech_end_at_ms),
+        ) {
+            (Some(out), Some(end)) => Some(out - end),
+            _ => None,
+        };
+        let perceived_latency_ms = match (
+            elapsed(tts_first_chunk_at_ms),
+            elapsed(timings.speech_last_voiced_at_ms),
+        ) {
+            (Some(out), Some(voiced)) => Some(out - voiced),
+            _ => None,
+        };
+        publish_log_event(
+            &events,
+            session_id,
+            Some(round_id.as_str()),
+            "speech_turn_latency",
+            json!({
+                "speech_start_ms": elapsed(timings.speech_start_at_ms),
+                "speech_last_voiced_ms": elapsed(timings.speech_last_voiced_at_ms),
+                "speech_end_ms": elapsed(timings.speech_end_at_ms),
+                "asr_final_ms": elapsed(timings.asr_final_at_ms),
+                "llm_first_token_ms": elapsed(model_timings.first_token_at_ms),
+                "llm_first_sentence_ms": elapsed(model_timings.first_sentence_at_ms),
+                "tts_first_chunk_ms": elapsed(tts_first_chunk_at_ms),
+                // Measured in the worker's playback path, which this layer does
+                // not see. Null until that marker is wired.
+                "audio_first_frame_ms": audio_first_frame_ms,
+                "system_response_ms": system_response_ms,
+                "perceived_latency_ms": perceived_latency_ms,
+                "segmentation": {
+                    "silence_flush_ms": session.segmentation_config.silence_flush_ms,
+                    "min_utterance_ms": session.segmentation_config.min_utterance_ms,
+                    "min_speech_confirm_ms": session.segmentation_config.min_speech_confirm_ms,
+                    "voice_activity_threshold": session.segmentation_config.voice_activity_threshold,
+                },
+            }),
+        )
+        .await?;
+    }
     finish_reply_stream(&session_store, &speech_session_id, &round_id, &state_gate).await?;
     publish_log_event(
         &events,
@@ -3087,6 +3229,7 @@ impl StoredSpeechSession {
             active_turn: None,
             candidate_speech_ms: 0,
             candidate_pcm: Vec::new(),
+            turn_timings: TurnTimings::default(),
         }
     }
 
@@ -3135,6 +3278,27 @@ impl StoredSpeechSession {
             }
             SpeechSegmentationDecision::SpeechStarted => {
                 self.phase = SpeechSessionPhase::SpeechDetected;
+                // A new turn begins; its markers are measured from here.
+                // Backdated by the confirmation window: the candidate frames
+                // are prepended into the utterance and sent to recognition, so
+                // the caller started speaking before the frame that confirmed
+                // it, and a marker at the confirmation would be late by exactly
+                // `min_speech_confirm_ms`.
+                // The confirming frame is prepended into the utterance along
+                // with the buffered candidates, so it counts too — otherwise
+                // every marker anchored at speech start is one frame late.
+                let confirming_frame_ms = frame_duration_ms(
+                    command.pcm_s16le.len(),
+                    command.sample_rate_hz,
+                    command.num_channels,
+                );
+                let began_at_ms =
+                    now_ms() - i64::from(self.candidate_speech_ms + confirming_frame_ms);
+                self.turn_timings = TurnTimings {
+                    speech_start_at_ms: Some(began_at_ms),
+                    speech_last_voiced_at_ms: Some(now_ms()),
+                    ..TurnTimings::default()
+                };
                 self.trailing_silence_ms = 0;
                 if self.pending_rounds.is_empty() {
                     self.deferred_flush = false;
@@ -3153,6 +3317,10 @@ impl StoredSpeechSession {
                 )
             }
             SpeechSegmentationDecision::SpeechContinues => {
+                // The most recent frame judged to carry voice. The gap between
+                // this and the endpoint decision is what the caller experiences
+                // as extra silence (ADR-0010's perceived latency).
+                self.turn_timings.speech_last_voiced_at_ms = Some(now_ms());
                 self.trailing_silence_ms = 0;
                 if self.pending_rounds.is_empty() {
                     self.deferred_flush = false;
@@ -3161,6 +3329,9 @@ impl StoredSpeechSession {
                 (SpeechInputTransition::noop(), Some(current))
             }
             SpeechSegmentationDecision::FlushUtterance => {
+                self.turn_timings
+                    .speech_end_at_ms
+                    .get_or_insert_with(now_ms);
                 if !self.pending_rounds.is_empty() {
                     if !self.deferred_flush {
                         self.trailing_silence_ms += frame_duration_ms(
@@ -3173,6 +3344,7 @@ impl StoredSpeechSession {
                     return (SpeechInputTransition::noop(), Some(current));
                 }
                 self.phase = SpeechSessionPhase::Flushing;
+                self.turn_timings.speech_end_at_ms = Some(now_ms());
                 (
                     SpeechInputTransition {
                         events: vec![SpeechRuntimeEvent::UtteranceFlushing],
@@ -3189,6 +3361,9 @@ impl StoredSpeechSession {
             return SpeechInputTransition::noop();
         }
         self.phase = SpeechSessionPhase::Flushing;
+        self.turn_timings
+            .speech_end_at_ms
+            .get_or_insert_with(now_ms);
         SpeechInputTransition {
             events: vec![SpeechRuntimeEvent::UtteranceFlushing],
             commit_request: self.take_pending_round_commit_request(),
@@ -3210,6 +3385,11 @@ impl StoredSpeechSession {
             return SpeechInputTransition::noop();
         }
         self.phase = SpeechSessionPhase::Flushing;
+        // A turn closed at end of input is still a turn; without this its
+        // latency summary would carry no speech_end and no system response.
+        self.turn_timings
+            .speech_end_at_ms
+            .get_or_insert_with(now_ms);
         SpeechInputTransition {
             events: vec![SpeechRuntimeEvent::UtteranceFlushing],
             commit_request: self.take_pending_round_commit_request(),
@@ -3238,11 +3418,15 @@ impl StoredSpeechSession {
     }
 
     fn push_pending_round(&mut self, commit_request: PendingRoundCommitRequest) {
+        // The speech is over; its timings belong to this round from here on, and
+        // the session's slot is free for whatever the caller says next.
+        let turn_timings = std::mem::take(&mut self.turn_timings);
         self.pending_rounds.push_back(PendingAsrRound {
             round_id: commit_request.round_id,
             latest_partial_transcript: String::new(),
             commit_started_at_ms: Some(now_millis()),
             force_agent_deadline_at_ms: commit_request.force_agent_deadline_at_ms,
+            turn_timings,
         });
     }
 
@@ -3337,6 +3521,7 @@ impl StoredSpeechSession {
         }
         let pending_round = self.pending_rounds.pop_front()?;
         Some(ForcedTranscriptTurn {
+            turn_timings: pending_round.turn_timings,
             round_id: pending_round.round_id,
             transcript: pending_round.latest_partial_transcript,
         })
@@ -3426,6 +3611,7 @@ mod tests {
             latest_partial_transcript: String::new(),
             commit_started_at_ms: None,
             force_agent_deadline_at_ms: None,
+            turn_timings: Default::default(),
         });
         session.next_round_seq = 2;
 
@@ -3597,6 +3783,7 @@ mod tests {
             latest_partial_transcript: "半句".to_owned(),
             commit_started_at_ms: Some(1),
             force_agent_deadline_at_ms: Some(2),
+            turn_timings: Default::default(),
         });
         session.dispatched_round_ids = vec!["speech-0".to_owned()];
         session.asr_session_id = "asr-old".to_owned();
@@ -3655,6 +3842,7 @@ mod tests {
             latest_partial_transcript: String::new(),
             commit_started_at_ms: None,
             force_agent_deadline_at_ms: None,
+            turn_timings: Default::default(),
         });
 
         assert!(!should_reset_live_input_buffer(
@@ -3694,6 +3882,7 @@ mod tests {
             latest_partial_transcript: String::new(),
             commit_started_at_ms: None,
             force_agent_deadline_at_ms: None,
+            turn_timings: Default::default(),
         });
 
         let claimed = session.claim_output_turn("speech-1").unwrap();
@@ -3717,6 +3906,7 @@ mod tests {
             latest_partial_transcript: String::new(),
             commit_started_at_ms: None,
             force_agent_deadline_at_ms: None,
+            turn_timings: Default::default(),
         });
 
         let error = session.claim_output_turn("speech-2").unwrap_err();
@@ -3751,6 +3941,7 @@ mod tests {
             latest_partial_transcript: String::new(),
             commit_started_at_ms: None,
             force_agent_deadline_at_ms: None,
+            turn_timings: Default::default(),
         });
         session.next_round_seq = 2;
 
@@ -3795,6 +3986,7 @@ mod tests {
             latest_partial_transcript: String::new(),
             commit_started_at_ms: None,
             force_agent_deadline_at_ms: None,
+            turn_timings: Default::default(),
         });
         session.next_round_seq = 2;
 
@@ -3867,6 +4059,7 @@ mod tests {
             latest_partial_transcript: "让我".to_owned(),
             commit_started_at_ms: Some(1_000),
             force_agent_deadline_at_ms: Some(1_400),
+            turn_timings: Default::default(),
         });
 
         let forced = session.take_forced_transcript_turn_if_overdue(1_401);
@@ -3874,6 +4067,7 @@ mod tests {
         assert_eq!(
             forced,
             Some(ForcedTranscriptTurn {
+                turn_timings: TurnTimings::default(),
                 round_id: "speech-1".to_owned(),
                 transcript: "让我".to_owned(),
             })

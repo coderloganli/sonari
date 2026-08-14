@@ -25,6 +25,12 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Build
         run: cargo build --workspace
+      # The harness's own arithmetic — normalisation, edit distance,
+      # percentiles, batch behaviour, clip assembly. Its dependencies are
+      # already compiled by the step above, so this costs one link. Tests that
+      # need credentials or a running stack skip themselves.
+      - name: Test the evaluation harness
+        run: cargo test -p harness
 
   compose:
     runs-on: ubuntu-latest

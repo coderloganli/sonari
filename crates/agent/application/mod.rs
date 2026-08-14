@@ -46,6 +46,20 @@ pub struct ChatCommand {
     pub user_message: String,
 }
 
+/// A finished turn, with the two timings only the streaming loop can see.
+///
+/// The reply is what the caller wanted; the timings are two of ADR-0010's eight
+/// markers, and they exist nowhere else — by the time the text is assembled, the
+/// moment the first token arrived has passed.
+#[derive(Debug, Clone)]
+pub struct ChatOutcome {
+    pub reply_text: String,
+    /// When the first token arrived, as epoch milliseconds — not an offset.
+    /// An offset needs an anchor, and the anchor is in another crate.
+    pub first_token_at_ms: Option<i64>,
+    pub first_sentence_at_ms: Option<i64>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AdminConfigView {
     pub provider_key: String,
@@ -139,12 +153,12 @@ trait AgentUseCases: Send + Sync {
     async fn create_session(&self, command: CreateSessionCommand) -> AppResult<AgentSession>;
     async fn get_session(&self, session_id: &str) -> AppResult<AgentSession>;
     async fn generate_welcome_message(&self, session_id: &str) -> AppResult<String>;
-    async fn chat_once(&self, command: ChatCommand) -> AppResult<String>;
+    async fn chat_once(&self, command: ChatCommand) -> AppResult<ChatOutcome>;
 }
 
 #[async_trait]
 pub trait AgentRuntimeUseCases: Send + Sync {
-    async fn chat_once(&self, command: ChatCommand) -> AppResult<String>;
+    async fn chat_once(&self, command: ChatCommand) -> AppResult<ChatOutcome>;
     /// 生成开场欢迎语(server-initiated turn);进程内编排时由 worker 起会话后调用。
     async fn generate_welcome_message(&self, agent_session_id: &str) -> AppResult<String>;
 }
@@ -240,7 +254,7 @@ where
         Ok(content)
     }
 
-    async fn chat_once(&self, command: ChatCommand) -> AppResult<String> {
+    async fn chat_once(&self, command: ChatCommand) -> AppResult<ChatOutcome> {
         let session = self.get_session(&command.session_id).await?;
         let provider = self
             .require_provider_config(ProviderKey::Conversation)
@@ -279,7 +293,11 @@ where
             turn_number,
         )
         .await?;
-        Ok(response.content)
+        Ok(ChatOutcome {
+            reply_text: response.content,
+            first_token_at_ms: response.first_token_at_ms,
+            first_sentence_at_ms: response.first_sentence_at_ms,
+        })
     }
 }
 
@@ -296,9 +314,19 @@ async fn collect_reply(
     let mut content = String::new();
     let mut usage = crate::ports::LlmUsage::default();
     let mut tool_calls = Vec::new();
+    let mut first_token_at_ms = None;
+    let mut first_sentence_at_ms = None;
     while let Some(delta) = stream.next().await {
         match delta? {
-            crate::ports::LlmDelta::Token(token) => content.push_str(&token),
+            crate::ports::LlmDelta::Token(token) => {
+                if first_token_at_ms.is_none() {
+                    first_token_at_ms = Some(chrono::Utc::now().timestamp_millis());
+                }
+                content.push_str(&token);
+                if first_sentence_at_ms.is_none() && ends_a_sentence(&content) {
+                    first_sentence_at_ms = Some(chrono::Utc::now().timestamp_millis());
+                }
+            }
             crate::ports::LlmDelta::ToolCall(call) => tool_calls.push(call),
             crate::ports::LlmDelta::Done(reported) => usage = reported,
         }
@@ -316,7 +344,16 @@ async fn collect_reply(
         content,
         prompt_tokens: usage.prompt_tokens,
         completion_tokens: usage.completion_tokens,
+        first_token_at_ms,
+        first_sentence_at_ms,
     })
+}
+
+/// Cheap test for a completed sentence, used only to time when one exists.
+/// Synthesis can begin at that point, so it is the earliest a reply could be
+/// spoken.
+fn ends_a_sentence(text: &str) -> bool {
+    text.trim_end().ends_with(['.', '!', '?', '。', '！', '？'])
 }
 
 /// Retained for the validation it encodes, which its test pins down; the admin
@@ -338,8 +375,6 @@ fn valid_agent_caller(caller: &AgentCallerIdentity) -> bool {
 }
 
 #[async_trait]
-#[async_trait]
-#[async_trait]
 impl<P, T, PP, S, M, U, G, C, I, K> AgentRuntimeUseCases
     for AgentService<P, T, PP, S, M, U, G, C, I, K>
 where
@@ -354,7 +389,7 @@ where
     I: IdGenerator + Send + Sync,
     K: Clock + Send + Sync,
 {
-    async fn chat_once(&self, command: ChatCommand) -> AppResult<String> {
+    async fn chat_once(&self, command: ChatCommand) -> AppResult<ChatOutcome> {
         AgentUseCases::chat_once(self, command).await
     }
 
