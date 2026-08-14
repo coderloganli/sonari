@@ -30,14 +30,44 @@ bot never joins its room. After a fresh `docker compose up` the pattern is
 reproducible: the first call runs and closes its recognition session, the second
 never starts.
 
+## What the logs pin down
+
+Timestamps from one call, and the whole log holds no other warning or error:
+
+```
+19:35:10.614  recognition task started
+19:35:11.721  worker push speech frame failed  error="recognition session is closed"
+19:35:11.721  … fifteen more, all in the same millisecond
+```
+
+Three facts follow.
+
+- **The recognition WebSocket never opened.** `recognition session open` is
+  logged the moment the handshake completes and never appears — not once in the
+  entire log.
+- **The task did not fail; it was cancelled.** Every failure path in
+  `run_socket` returns an error that the spawning task logs as
+  `recognition session failed`, and a server close logs its reason. Neither
+  appears. A cancelled task logs nothing, and the only thing that cancels these
+  is `abort_turn_tasks`, on the session-close path.
+- **Frames had been queuing.** Sixteen failures land in the same millisecond,
+  which is a backlog draining against an already-closed channel rather than
+  frames failing as they arrive.
+
+So the session is closed about a second into the call, taking the
+half-open recognition socket with it.
+
+**Not the network.** From the same compose network, `api.elevenlabs.io` answers
+in 150 ms.
+
 ## The two questions
 
-1. **Why does the recognition session close?** It closes roughly a second after
-   `recognition task started`, before any frame has been accepted. Nothing in
-   the ElevenLabs adapter logs a reason at INFO. The session is opened with
-   `commit_strategy=manual` (`crates/providers/src/elevenlabs_asr.rs:63`), so the
-   provider is not committing on its own; whether it is closing on its own, and
-   why, needs adapter-level logging or a captured WebSocket close frame.
+1. **What closes the speech session a second in?** Nothing in the harness does
+   — it stays on the line for twenty seconds and calls `end_call` only
+   afterwards. `mark_session_closing` and `fail_speech_session` are the two
+   paths (`crates/call/speech-runtime/application/mod.rs:974`, `:2307`); which
+   one fires, and why, is the thread to pull. Neither logs at INFO today, so the
+   first step is to make them.
 2. **Why does one closed session stop the next call?** A terminal speech session
    should not prevent a new call from getting a runtime. Whatever holds — the
    runtime owner claim, the worker's orchestration state — is not released.
