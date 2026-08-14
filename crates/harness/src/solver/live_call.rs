@@ -132,10 +132,13 @@ impl LiveCallSolver {
             .await
             .context("failed to publish the caller's audio track")?;
 
-        // Wait for the bot's own track before speaking. A client cannot observe
-        // whether anyone has subscribed to *its* track, so this is a proxy: the
-        // bot publishing means its side of the session is up. Merely connecting
-        // is a weaker signal and is deliberately not accepted. Publishing a
+        // Wait for the bot to be in the room before speaking — and only that.
+        //
+        // Waiting for the bot's *track* would deadlock: the runtime subscribes
+        // to the caller's audio first and publishes its own only afterwards, so
+        // a caller who waits to hear the bot before speaking waits forever. The
+        // bot's presence is the real precondition; a client cannot observe
+        // whether anyone has subscribed to it, and nothing here can. Publishing a
         // track does not mean anyone has subscribed to it, and frames sent
         // before the worker subscribes are simply dropped — which would show up
         // as the clip's opening words missing, indistinguishable from a
@@ -144,20 +147,27 @@ impl LiveCallSolver {
         // A track is subscribed once. If the readiness wait sees it, the later
         // wait never will, and treating that as "the bot never spoke" would
         // report a service that answered as one that did not.
-        let mut bot_track_seen = false;
-        let ready_by = tokio::time::Instant::now() + Duration::from_secs(10);
-        while tokio::time::Instant::now() < ready_by && !bot_track_seen {
+        let mut bot_present = room.remote_participants().values().any(|participant| {
+            participant.identity().as_str() == realtime.bot_participant_identity
+        });
+        let ready_by = tokio::time::Instant::now() + Duration::from_secs(15);
+        while tokio::time::Instant::now() < ready_by && !bot_present {
             match tokio::time::timeout(Duration::from_millis(250), room_events.recv()).await {
+                Ok(Some(RoomEvent::ParticipantConnected(participant)))
+                    if participant.identity().as_str() == realtime.bot_participant_identity =>
+                {
+                    bot_present = true;
+                }
                 Ok(Some(RoomEvent::TrackSubscribed { participant, .. }))
                     if participant.identity().as_str() == realtime.bot_participant_identity =>
                 {
-                    bot_track_seen = true;
+                    bot_present = true;
                 }
                 _ => {}
             }
         }
 
-        if !bot_track_seen {
+        if !bot_present {
             // Speaking to a room nobody is listening in loses the opening words
             // and reports it as a recognition failure. A readiness problem
             // should say it is one.
