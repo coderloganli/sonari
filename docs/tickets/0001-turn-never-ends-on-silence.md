@@ -1,6 +1,6 @@
 # 0001 — A turn appears never to end on trailing silence
 
-**Status**: Fix written 2026-08-15, live verification pending
+**Status**: Fix written 2026-08-15; live verification blocked by ticket 0004
 
 > **2026-08-15 — confirmed by measurement.** With tickets 0002 and 0003 fixed,
 > a live call now shows exactly what the reasoning below predicts:
@@ -110,3 +110,19 @@ rather than one that arrives with the hang-up.
 Whether an amplitude comparison is the right instrument remains open. The Silero
 detector is already vendored and used nowhere in the call path; moving to it
 would change how ADR-0016 is implemented and wants its own decision.
+
+## Live verification, and what it ran into
+
+With the threshold at 300 no speech is detected on a live call at all. That is
+not the threshold being wrong: instrumenting the comparison shows the loudest
+frame reaching it in any second is **9**, against a clip whose frames peak at
+**16823** and sit around 9000 through the speech. The caller's audio is not
+arriving at the segmentation policy.
+
+It arrives sometimes — an earlier run transcribed `"I'd like a table-"` from the
+same clip — so delivery is intermittent, and that is ticket 0004. Until it is
+reliable, whether 300 is a good value cannot be answered.
+
+The comparison now logs the loudest frame it saw each second, which is what made
+this visible; sampling a frame at random reports silence during speech often
+enough to mislead.

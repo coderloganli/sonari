@@ -111,12 +111,22 @@ pub(crate) fn has_voice_activity(pcm_s16le: &[i16], threshold: i16) -> bool {
     if pcm_s16le.is_empty() {
         return false;
     }
+    // The loudest frame in each second, rather than every frame or an arbitrary
+    // one: speech is a minority of frames, and a sample that misses it says the
+    // caller was silent when they were not.
+    static SEEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    static PEAK: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
     let avg = pcm_s16le
         .iter()
         .map(|sample| i32::from(sample.abs()))
         .sum::<i32>()
         / pcm_s16le.len() as i32;
+    PEAK.fetch_max(avg, std::sync::atomic::Ordering::Relaxed);
+    if SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 50 == 49 {
+        let peak = PEAK.swap(0, std::sync::atomic::Ordering::Relaxed);
+        tracing::debug!(peak_mean_abs = peak, threshold, "voice activity peak");
+    }
     avg >= i32::from(threshold)
 }
 
