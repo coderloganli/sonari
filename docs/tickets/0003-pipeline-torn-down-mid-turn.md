@@ -1,6 +1,6 @@
 # 0003 — The media pipeline is torn down two seconds into a call
 
-**Status**: Open · **Found by**: the evaluation harness, 2026-08-15 · **Area**: `call/worker` lifecycle
+**Status**: Fixed 2026-08-15 · **Found by**: the evaluation harness, 2026-08-15 · **Area**: `call/worker` lifecycle
 
 ## What happens
 
@@ -47,7 +47,42 @@ catch this, and **neither fires**: the task did not return an error, and it did
 not complete unexpectedly. So the pipeline value was dropped by something other
 than the stop path or the reap path.
 
-## Where to look
+## The cause, and the fix
+
+The media plane is one spawned task whose result nobody read
+(`crates/app/src/bootstrap.rs`), and inside it every control-plane error
+propagated with `?` straight out of the worker loop. So a single rejected fact —
+
+```
+publish runtime event failed (NotFound): speech session not found
+```
+
+— ended the task, which dropped the worker, its map of active runtimes, and with
+them every `watch::Sender`. That is why the drain saw its shutdown channel
+vanish, why the call in progress was torn down mid-turn, and why no later call
+was ever claimed: **there was no media plane left**. The process went on
+answering `/healthz` throughout.
+
+Three changes:
+
+- The media plane is supervised. If it ever returns, it says so at error level
+  and states the consequence, rather than disappearing.
+- A control-plane rejection about one session is recorded and skipped instead of
+  ending the loop. One call's stale fact is not a reason to stop being able to
+  serve calls.
+- Queued actions that fail retryably stay queued instead of propagating, which
+  was killing the plane on any transient blip.
+
+Two consecutive probe calls now both complete with a spoken reply, and a
+fifteen-clip live evaluation runs every clip.
+
+## What this exposed next
+
+With calls surviving, the evaluation set can finally see what it was built for,
+and it confirms ticket 0001: speech is detected, and the utterance is then never
+flushed until the caller hangs up. See that ticket.
+
+## Where to look (original notes)
 
 - What drops an `ActiveRuntime` without `stop()` — an `insert` replacing an
   existing entry, a map cleared, or a value moved out and discarded.

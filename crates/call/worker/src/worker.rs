@@ -436,8 +436,23 @@ impl WorkerService {
             let Some(action) = self.pending_actions.front().cloned() else {
                 return Ok(());
             };
-            self.send_action(action).await?;
-            self.pending_actions.pop_front();
+            match self.send_action(action).await {
+                Ok(()) => {
+                    self.pending_actions.pop_front();
+                }
+                // Still worth retrying: leave it queued and come back next tick.
+                Err(error) if is_retryable_control_plane_error(&error) => {
+                    tracing::debug!(%error, "worker deferring a queued control-plane action");
+                    return Ok(());
+                }
+                // Rejected outright — usually about one session that has since
+                // gone. Dropping it costs a record; propagating it would end the
+                // media plane and with it every call this process can serve.
+                Err(error) => {
+                    tracing::warn!(%error, "worker dropping a rejected control-plane action");
+                    self.pending_actions.pop_front();
+                }
+            }
         }
     }
 
@@ -454,7 +469,11 @@ impl WorkerService {
                     self.pending_actions.extend(pending);
                     return Ok(());
                 }
-                Err(error) => return Err(error),
+                // One session's rejected fact is not a reason to stop being a
+                // media plane. It is recorded and the loop carries on.
+                Err(error) => {
+                    tracing::warn!(%error, "worker dropping a rejected control-plane action");
+                }
             }
         }
         Ok(())

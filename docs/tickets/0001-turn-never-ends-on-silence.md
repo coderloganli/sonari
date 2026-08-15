@@ -2,11 +2,23 @@
 
 **Status**: Open — premise revised, see below
 
-> **2026-08-15.** The reasoning below was formed on a system where recognition
-> never worked at all (ticket 0002). With that fixed, a live call does emit
-> `speech_utterance_flushing` — the flush branch is reachable, so the static
-> argument here is wrong somewhere. What the endpointing parameters actually do
-> is now measurable, and unmeasured. Re-run the set before trusting any of it. · **Found by**: the evaluation harness, 2026-08-14 · **Area**: endpointing (ADR-0016)
+> **2026-08-15 — confirmed by measurement.** With tickets 0002 and 0003 fixed,
+> a live call now shows exactly what the reasoning below predicts:
+>
+> ```
+> + 3.11s  speech_detected
+>          … twenty seconds of nothing …
+> +22.89s  call_end_requested          ← the caller hangs up
+> +23.03s  speech_session_closing
+> +23.03s  speech_utterance_flushing   ← same millisecond as the close
+> +23.14s  speech_asr_final_received   transcript: ""
+> ```
+>
+> The clip is 4.2 s long and `silence_flush_ms` is 700 ms, so the utterance
+> should have been committed around six seconds in. It never was. The one flush
+> that does appear comes from the close path, not from silence — which is also
+> what an earlier run showed, and what briefly looked like evidence against this
+> ticket. · **Found by**: the evaluation harness, 2026-08-14 · **Area**: endpointing (ADR-0016)
 
 ## What was observed
 

@@ -219,14 +219,17 @@ pub async fn run() -> Result<()> {
     // agent call are function calls, and audio never leaves the process.
     let worker_config =
         worker::WorkerConfig::from_env(runtime_owner_id.clone(), config.secrets.voice.clone())?;
-    let media_plane = tokio::spawn(worker::run(
+    // Supervised, because an unwatched media plane is a service that answers
+    // /healthz while no call can be answered at all: every `?` in the worker
+    // loop returns from the task, which drops every active runtime with it.
+    let media_plane = tokio::spawn(supervise_media_plane(worker::run(
         worker_config,
         call_execution_use_cases.clone(),
         speech_runtime_service.clone(),
         agent_service.clone(),
         Arc::new(call_event_outbox_sink.clone()),
         voice_runtime,
-    ));
+    )));
     tracing::info!("media plane started");
 
     let router = api::build_router_with_modules(api::ModuleServices {
@@ -460,4 +463,25 @@ async fn shutdown_signal() {
     }
 
     tracing::info!("shutdown signal received");
+}
+
+/// Reports what became of the media plane.
+///
+/// Its task returning is not a normal event: the worker loop only leaves on an
+/// error, and when it does every runtime it was holding is dropped, so calls in
+/// progress end and new ones are never claimed. Saying so loudly is the least
+/// this can do.
+async fn supervise_media_plane(
+    plane: impl std::future::Future<Output = anyhow::Result<()>>,
+) -> anyhow::Result<()> {
+    match plane.await {
+        Ok(()) => {
+            tracing::error!("media plane stopped; no further call will be served");
+            Ok(())
+        }
+        Err(error) => {
+            tracing::error!(%error, "media plane failed; no further call will be served");
+            Err(error)
+        }
+    }
 }
