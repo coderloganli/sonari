@@ -1,53 +1,30 @@
-# 0004 — The caller's audio reaches the policy only sometimes
+# 0004 — The caller was talking over the greeting
 
-**Status**: Open · **Found by**: the evaluation harness, 2026-08-15 · **Area**: `call/worker`, `call/rtc`
+**Status**: Fixed 2026-08-15 · **Found by**: the evaluation harness · **Area**: eval clients
 
-## What is seen
+## What was happening
 
-The segmentation policy now logs the loudest frame it saw each second. On a call
-driven by the built-in probe with `evals/clips/baseline-question.wav`:
+The caller's audio reached the segmentation policy only sometimes: the loudest
+frame in a second would be 9, on a clip whose frames peak at 16823.
 
-```
-peak_mean_abs 0    threshold 300
-peak_mean_abs 9    threshold 300
-peak_mean_abs 0    threshold 300
-```
+It was not transport. The service drops inbound frames outright while its own
+turn is pending (`InputGateMode::Closed` and `OutputTurnPending` both `continue`
+without pushing), and both eval clients started speaking the moment they saw the
+bot's track — which is during the greeting, not after it. Whether a clip was
+heard came down to whether it happened to land in the barge-in path.
 
-The clip's own frames peak at **16823** and hold around **9000** through the
-speech, measured directly from the file. So the audio reaching the policy is not
-quiet — it is absent.
+## The fix
 
-On those calls the timeline ends at `runtime_playback_completed`: no
-`worker_barge_in_detected`, no `speech_detected`, nothing until the caller hangs
-up.
+The live solver now waits for the greeting to finish before speaking: it
+subscribes to the bot's audio and starts the clip once that has been quiet for
+700 ms. That is what a caller does, and it also keeps the measurement about an
+ordinary turn rather than a barge-in, which is a different thing that would want
+its own clips.
 
-**It is not always absent.** An earlier call, same clip, same build, produced
-`speech_asr_final_received "I'd like a table-"`. Delivery works sometimes.
+`crates/probe` starts speaking immediately for the same reason and has the same
+blind spot; its `perceived_response_ms` has been 0.0 throughout, because what it
+heard was the greeting rather than an answer. Worth the same treatment.
 
-## Why it matters
+## What it unblocked
 
-It blocks ticket 0001. Whether `voice_activity_threshold` is set well cannot be
-judged while the audio it judges arrives at random.
-
-## Where to look
-
-- Whether the probe's published track is being subscribed before it starts
-  sending, and what happens to frames sent in between.
-- `AudioPreprocessor` — the policy sees whatever it emits, and a preprocessor
-  that suppressed everything would look exactly like this.
-- Whether the frames the policy inspects are the same buffer that reaches
-  recognition; recognition has produced real transcripts on calls where the
-  policy saw silence, which would be impossible if they were the same audio.
-
-That last point is the sharpest lead: the two disagreeing about the same call
-means they are not looking at the same samples.
-
-## Reproducing
-
-```bash
-docker compose up -d
-scripts/dev.sh cargo run --release -p probe -- evals/clips/baseline-question.wav
-```
-
-with `RUST_LOG=speech_runtime=debug` and `SONARI_URL` / `SONARI_LIVEKIT_URL` set.
-Watch `peak_mean_abs` in the service log against the clip's own levels.
+The first complete live evaluation, and with it ticket 0001's answer.

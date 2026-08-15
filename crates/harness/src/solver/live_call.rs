@@ -17,6 +17,7 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
+use futures::StreamExt;
 use libwebrtc::{
     audio_source::native::NativeAudioSource,
     prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
@@ -24,7 +25,8 @@ use libwebrtc::{
 use livekit::{
     Room, RoomEvent, RoomOptions,
     options::TrackPublishOptions,
-    prelude::{LocalAudioTrack, LocalTrack},
+    prelude::{LocalAudioTrack, LocalTrack, RemoteTrack},
+    webrtc::audio_stream::native::NativeAudioStream,
 };
 
 use crate::{
@@ -132,49 +134,47 @@ impl LiveCallSolver {
             .await
             .context("failed to publish the caller's audio track")?;
 
-        // Wait for the bot to be in the room before speaking — and only that.
+        // Wait for the agent to finish greeting before speaking.
         //
-        // Waiting for the bot's *track* would deadlock: the runtime subscribes
-        // to the caller's audio first and publishes its own only afterwards, so
-        // a caller who waits to hear the bot before speaking waits forever. The
-        // bot's presence is the real precondition; a client cannot observe
-        // whether anyone has subscribed to it, and nothing here can. Publishing a
-        // track does not mean anyone has subscribed to it, and frames sent
-        // before the worker subscribes are simply dropped — which would show up
-        // as the clip's opening words missing, indistinguishable from a
-        // recognition failure, and worst on exactly the short clips where the
-        // opening words are the whole utterance.
-        // A track is subscribed once. If the readiness wait sees it, the later
-        // wait never will, and treating that as "the bot never spoke" would
-        // report a service that answered as one that did not.
-        let mut bot_present = room.remote_participants().values().any(|participant| {
-            participant.identity().as_str() == realtime.bot_participant_identity
-        });
+        // A caller does not talk over the hello, and the service does not want
+        // them to: while its own turn is pending it drops inbound frames
+        // outright, so a clip started too early is simply not heard — which
+        // looked for a while like audio being lost in transport. Waiting also
+        // keeps this measuring an ordinary turn rather than a barge-in, which is
+        // a different thing with its own clips.
+        let mut greeting = None;
         let ready_by = tokio::time::Instant::now() + Duration::from_secs(15);
-        while tokio::time::Instant::now() < ready_by && !bot_present {
+        while tokio::time::Instant::now() < ready_by && greeting.is_none() {
             match tokio::time::timeout(Duration::from_millis(250), room_events.recv()).await {
-                Ok(Some(RoomEvent::ParticipantConnected(participant)))
-                    if participant.identity().as_str() == realtime.bot_participant_identity =>
-                {
-                    bot_present = true;
-                }
-                Ok(Some(RoomEvent::TrackSubscribed { participant, .. }))
-                    if participant.identity().as_str() == realtime.bot_participant_identity =>
-                {
-                    bot_present = true;
+                Ok(Some(RoomEvent::TrackSubscribed {
+                    track: RemoteTrack::Audio(track),
+                    participant,
+                    ..
+                })) if participant.identity().as_str() == realtime.bot_participant_identity => {
+                    greeting = Some(NativeAudioStream::new(track.rtc_track(), 16_000, 1));
                 }
                 _ => {}
             }
         }
 
-        if !bot_present {
-            // Speaking to a room nobody is listening in loses the opening words
-            // and reports it as a recognition failure. A readiness problem
-            // should say it is one.
+        let Some(mut greeting) = greeting else {
             anyhow::bail!(
-                "the bot never joined room {} within the readiness window; the clip was not sent",
+                "the bot never published audio in room {}; the clip was not sent",
                 realtime.room_name
             );
+        };
+
+        // Quiet for this long means the greeting is over. Shorter than a pause
+        // inside a sentence would cut it off; longer wastes the run.
+        const QUIET_MS: u64 = 700;
+        let listen_until = tokio::time::Instant::now() + Duration::from_secs(15);
+        while tokio::time::Instant::now() < listen_until {
+            match tokio::time::timeout(Duration::from_millis(QUIET_MS), greeting.next()).await {
+                // Nothing for QUIET_MS: the agent has stopped talking.
+                Err(_) => break,
+                Ok(None) => break,
+                Ok(Some(_)) => {}
+            }
         }
 
         // At the pace a caller speaks. Reading the file as fast as it comes off

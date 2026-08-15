@@ -1,6 +1,6 @@
 # 0001 — A turn appears never to end on trailing silence
 
-**Status**: Fix written 2026-08-15; live verification blocked by ticket 0004
+**Status**: Fixed and verified 2026-08-15
 
 > **2026-08-15 — confirmed by measurement.** With tickets 0002 and 0003 fixed,
 > a live call now shows exactly what the reasoning below predicts:
@@ -126,3 +126,29 @@ reliable, whether 300 is a good value cannot be answered.
 The comparison now logs the loudest frame it saw each second, which is what made
 this visible; sampling a frame at random reports silence during speech often
 enough to mislead.
+
+## Verified
+
+First complete live run of the fifteen-clip set, with the threshold at 300:
+
+```
+hangover cost    p50 700 ms          ← exactly silence_flush_ms
+system response  p50 854   p95 976
+perceived        p50 1553  p95 1676  ← the pair differs by the hangover
+```
+
+The turn now ends on silence, and it ends after the configured wait rather than
+at hang-up. The pause ladder places the boundary where the setting says it is:
+
+```
+pause-400    1 utterance    wer 0.00
+pause-600    1 utterance    wer 0.00
+pause-800    1 utterance    wer 0.20   endpoint +185 ms into the gap
+pause-1200   2 utterances   wer 0.22
+```
+
+Clips whose pause is under 700 ms survive intact; the ones above it lose words or
+split in two. That is the trade this setting makes, measured rather than argued.
+
+Silence and the cough still open no turn — no false triggers — so the threshold
+has not been set so low that noise starts turns.
