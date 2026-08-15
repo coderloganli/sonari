@@ -98,6 +98,9 @@ async fn main() -> Result<()> {
                     SAMPLE_RATE_HZ as i32,
                     1,
                 );
+                let opened = Instant::now();
+                let mut second = 0_u64;
+                let mut peak = 0_i32;
                 while let Some(frame) = stream.next().await {
                     let loudness = if frame.data.is_empty() {
                         0
@@ -105,6 +108,17 @@ async fn main() -> Result<()> {
                         frame.data.iter().map(|s| i32::from(s.abs())).sum::<i32>()
                             / frame.data.len() as i32
                     };
+                    // One line a second, so the agent's track can be lined up
+                    // against what the service says it was playing. This is how
+                    // ticket 0005 was found and is the first thing to look at
+                    // when a call sounds silent.
+                    peak = peak.max(loudness);
+                    let elapsed = opened.elapsed().as_secs();
+                    if elapsed > second {
+                        tracing::debug!(second = elapsed, peak, "agent track level");
+                        second = elapsed;
+                        peak = 0;
+                    }
                     if reply_tx.send((frame.data.len(), loudness)).await.is_err() {
                         return;
                     }
