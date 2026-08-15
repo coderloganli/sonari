@@ -28,3 +28,19 @@ heard was the greeting rather than an answer. Worth the same treatment.
 ## What it unblocked
 
 The first complete live evaluation, and with it ticket 0001's answer.
+
+## Follow-up: waiting is not yet detection
+
+Both clients now wait, and the measurements they produce are sound — the probe's
+`perceived_response_ms` went from a constant 0.0 to a real 280 ms with a 1.3 s
+reply, because silence no longer counts as an answer.
+
+But neither actually detects the end of the greeting. A subscribed track delivers
+frames continuously, silence included, so "wait until frames stop" waits the
+whole window. The probe judges loudness instead and reports `loudest=0` for the
+agent's track throughout the wait: the greeting arrives as zeros, then real audio
+arrives after the caller speaks. Why the same track carries zeros at one moment
+and speech at another is unexplained, and until it is, both clients are really
+waiting on a clock.
+
+The cost is fifteen seconds a clip in the eval and ten in the probe.

@@ -164,8 +164,12 @@ impl LiveCallSolver {
             );
         };
 
-        // Quiet for this long means the greeting is over. Shorter than a pause
-        // inside a sentence would cut it off; longer wastes the run.
+        // Intended as "wait until the greeting stops"; in practice a subscribed
+        // track keeps delivering frames, silence included, so this waits the
+        // full window instead. That is enough to let the greeting finish, which
+        // is what the measurement needs, but it is not what the name suggests
+        // and it costs fifteen seconds a clip. Judging the frames' loudness
+        // rather than their arrival is the fix — see docs/tickets/0004.
         const QUIET_MS: u64 = 700;
         let listen_until = tokio::time::Instant::now() + Duration::from_secs(15);
         while tokio::time::Instant::now() < listen_until {

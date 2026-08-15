@@ -81,7 +81,10 @@ async fn main() -> Result<()> {
 
     // Reply audio is counted on its own task: it starts arriving while the
     // utterance is still being spoken if the agent interrupts.
-    let (reply_tx, mut reply_rx) = tokio::sync::mpsc::channel::<usize>(64);
+    // Bytes and loudness: the first measures how much the agent said, the
+    // second whether it is saying anything at all. A subscribed track delivers
+    // frames continuously, silence included, so arrival alone answers neither.
+    let (reply_tx, mut reply_rx) = tokio::sync::mpsc::channel::<(usize, i32)>(64);
     tokio::spawn(async move {
         while let Some(event) = events.recv().await {
             if let RoomEvent::TrackSubscribed {
@@ -96,13 +99,74 @@ async fn main() -> Result<()> {
                     1,
                 );
                 while let Some(frame) = stream.next().await {
-                    if reply_tx.send(frame.data.len()).await.is_err() {
+                    let loudness = if frame.data.is_empty() {
+                        0
+                    } else {
+                        frame.data.iter().map(|s| i32::from(s.abs())).sum::<i32>()
+                            / frame.data.len() as i32
+                    };
+                    if reply_tx.send((frame.data.len(), loudness)).await.is_err() {
                         return;
                     }
                 }
             }
         }
     });
+
+    // Let the agent finish greeting before speaking.
+    //
+    // It says hello as soon as a caller's track appears, and while its own turn
+    // is in progress the service drops inbound frames outright — so a caller who
+    // talks over the greeting is simply not heard, and this probe could not tell:
+    // its ear is a byte counter, and the greeting is bytes. Every run reported a
+    // reply that was only ever the tail of "hello".
+    //
+    // Waiting on the agent's own audio rather than on a clock, because the
+    // greeting is generated and its length varies. Quiet for longer than a pause
+    // inside a sentence means it has stopped.
+    const GREETING_QUIET: Duration = Duration::from_millis(700);
+    const GREETING_START_TIMEOUT: Duration = Duration::from_secs(10);
+    // Loud enough to be speech rather than the floor of an open microphone.
+    const SPEAKING: i32 = 100;
+    let quiet_frames_needed = (GREETING_QUIET.as_millis()
+        / (FRAME_SAMPLES as u128 * 1000 / SAMPLE_RATE_HZ as u128))
+        .max(1);
+
+    let mut heard_greeting = false;
+    let mut loudest = 0_i32;
+    let mut quiet_run = 0_u128;
+    let started_waiting = Instant::now();
+    while started_waiting.elapsed() < GREETING_START_TIMEOUT {
+        let Ok(Some((_, loudness))) =
+            tokio::time::timeout(Duration::from_millis(500), reply_rx.recv()).await
+        else {
+            // The track has stopped delivering entirely, which is as good as
+            // quiet for this purpose.
+            break;
+        };
+        loudest = loudest.max(loudness);
+        if loudness >= SPEAKING {
+            heard_greeting = true;
+            quiet_run = 0;
+        } else if heard_greeting {
+            quiet_run += 1;
+            if quiet_run >= quiet_frames_needed {
+                break;
+            }
+        }
+    }
+    if heard_greeting {
+        tracing::info!(
+            waited_ms = started_waiting.elapsed().as_millis() as u64,
+            "greeting finished; speaking"
+        );
+    } else {
+        tracing::warn!(
+            loudest,
+            threshold = SPEAKING,
+            "the agent never greeted; speaking anyway"
+        );
+    }
 
     // Speak at the pace a caller speaks. Pushing faster is a different test:
     // endpointing is decided from silence, and silence needs elapsed time.
@@ -141,7 +205,13 @@ async fn main() -> Result<()> {
             })
             .await
             .ok();
-        while let Ok(samples) = reply_rx.try_recv() {
+        while let Ok((samples, loudness)) = reply_rx.try_recv() {
+            // Only audible audio counts as a reply. An open track delivers
+            // silence forever, and treating that as an answer is how this probe
+            // used to report a response before the agent had said anything.
+            if loudness < SPEAKING {
+                continue;
+            }
             if first_reply_at.is_none() {
                 first_reply_at = Some(spoke_until.elapsed());
             }
