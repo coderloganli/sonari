@@ -119,3 +119,49 @@ pub(crate) fn has_voice_activity(pcm_s16le: &[i16], threshold: i16) -> bool {
         / pcm_s16le.len() as i32;
     avg >= i32::from(threshold)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bug this pins down shipped for a while: the threshold was hardcoded
+    /// to zero, and `avg` is a mean of absolute values, so it can never be below
+    /// it. Every frame counted as voice, silence was never observed, and a turn
+    /// only ended when the caller hung up.
+    #[test]
+    fn a_zero_threshold_calls_everything_voice() {
+        let silence = vec![0_i16; 320];
+
+        assert!(
+            has_voice_activity(&silence, 0),
+            "at zero even digital silence is voice, which is what broke endpointing"
+        );
+    }
+
+    /// A noise floor around −60 dBFS lands near 33 on this scale; speech
+    /// measured in real calls runs in the thousands.
+    #[test]
+    fn a_usable_threshold_separates_a_noise_floor_from_speech() {
+        let floor = vec![33_i16; 320];
+        let speech = vec![2_000_i16; 320];
+
+        assert!(!has_voice_activity(&floor, 300));
+        assert!(has_voice_activity(&speech, 300));
+    }
+
+    /// Negative samples are as loud as positive ones; comparing the raw mean
+    /// rather than the absolute mean would make a waveform silent by symmetry.
+    #[test]
+    fn loudness_ignores_sign() {
+        let alternating: Vec<i16> = (0..320)
+            .map(|index| if index % 2 == 0 { 2_000 } else { -2_000 })
+            .collect();
+
+        assert!(has_voice_activity(&alternating, 300));
+    }
+
+    #[test]
+    fn an_empty_frame_is_not_voice() {
+        assert!(!has_voice_activity(&[], 300));
+    }
+}

@@ -1,6 +1,6 @@
 # 0001 — A turn appears never to end on trailing silence
 
-**Status**: Open — premise revised, see below
+**Status**: Fix written 2026-08-15, live verification pending
 
 > **2026-08-15 — confirmed by measurement.** With tickets 0002 and 0003 fixed,
 > a live call now shows exactly what the reasoning below predicts:
@@ -90,3 +90,23 @@ scripts/dev.sh cargo run --release -p harness --features live -- \
 Needs `SONARI_BASE_URL`, `SONARI_LIVEKIT_URL`, `SONARI_CHARACTER_ID` and
 `SONARI_ADMIN_TOKEN`; see `.claude/new-task.md`. The failure is every row
 reporting `the call produced no speech_turn_latency event`.
+
+## The fix
+
+`voice_activity_threshold` is now a setting rather than a hardcoded zero
+(`[endpointing]` in `sonari.toml`), defaulting to 300 — comfortably above a
+−60 dBFS noise floor, which lands near 33 on this scale, and far below the
+thousands that measured speech reaches.
+
+Four tests pin the behaviour down, including the one that would have caught this
+at the time: at a threshold of zero even digital silence counts as voice, because
+the comparison is against a mean of absolute values and that is never negative.
+
+**Not yet verified end to end.** The Docker daemon went down before a live run
+could confirm that a turn now ends on silence. The proof to look for is a
+`speech_utterance_flushing` roughly `silence_flush_ms` after the caller stops,
+rather than one that arrives with the hang-up.
+
+Whether an amplitude comparison is the right instrument remains open. The Silero
+detector is already vendored and used nowhere in the call path; moving to it
+would change how ADR-0016 is implemented and wants its own decision.
