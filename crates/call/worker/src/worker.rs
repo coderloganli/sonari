@@ -124,13 +124,20 @@ impl WorkerService {
                         session_id,
                         "worker runtime completed unexpectedly without an explicit stop request"
                     );
+                    tracing::warn!(
+                        session_id,
+                        "worker runtime completed unexpectedly without an explicit stop request"
+                    );
                     failed.push((
                         session_id,
                         "runtime pipeline exited unexpectedly".to_owned(),
                     ));
                 }
                 Some(Err(error)) => {
-                    tracing::debug!(
+                    // This ends the call. Reporting it at debug meant the most
+                    // consequential failure in the worker was also the least
+                    // visible one.
+                    tracing::warn!(
                         session_id,
                         error = %error,
                         "worker detected runtime pipeline failure"

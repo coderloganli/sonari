@@ -39,11 +39,4 @@ was indistinguishable from one still working. Three lines now cover the open
 attempt, the elapsed time on success, and a clean exit, and `fail_speech_session`
 warns rather than only recording a call event.
 
-## What remains
-
-Two behaviours are still open and are not this bug:
-
-- `speech_session_closing` arrives while a turn is still in flight, so no
-  `speech_turn_latency` is emitted and the transcript is truncated —
-  `"I'd like a table-"` against a reference of "i'd like a table for four people".
-- After one call, the next gets no runtime: the bot never joins its room.
+## What remains — see 0003
