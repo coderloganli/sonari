@@ -1,6 +1,12 @@
 # 0001 — A turn appears never to end on trailing silence
 
-**Status**: Open · **Found by**: the evaluation harness, 2026-08-14 · **Area**: endpointing (ADR-0016)
+**Status**: Open — premise revised, see below
+
+> **2026-08-15.** The reasoning below was formed on a system where recognition
+> never worked at all (ticket 0002). With that fixed, a live call does emit
+> `speech_utterance_flushing` — the flush branch is reachable, so the static
+> argument here is wrong somewhere. What the endpointing parameters actually do
+> is now measurable, and unmeasured. Re-run the set before trusting any of it. · **Found by**: the evaluation harness, 2026-08-14 · **Area**: endpointing (ADR-0016)
 
 ## What was observed
 
