@@ -136,6 +136,7 @@ dependencies = [
  "call",
  "call-execution",
  "call-log-contract",
+ "character-context",
  "chrono",
  "observability",
  "percent-encoding",

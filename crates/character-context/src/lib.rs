@@ -46,6 +46,16 @@ pub struct CharacterPromptContext {
     pub scene: Option<ScenePromptProfile>,
 }
 
+/// A persona as a client needs to see it: enough to offer a choice and start a
+/// call, and nothing else. The prompts and the synthesis voice are the
+/// operator's material (ADR-0020).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CharacterSummary {
+    pub character_id: i64,
+    pub name: String,
+    pub scene_name: Option<String>,
+}
+
 #[async_trait]
 pub trait CharacterCallContextReadPort: Send + Sync {
     async fn get_visible_call_context(
@@ -63,6 +73,22 @@ pub trait CharacterPromptContextReadPort: Send + Sync {
         character_id: i64,
         selected_scene_id: Option<i64>,
     ) -> AppResult<CharacterPromptContext>;
+}
+
+/// Reading the catalogue of personas a caller may choose from.
+#[async_trait]
+pub trait CharacterCatalogReadPort: Send + Sync {
+    async fn list_characters(&self) -> AppResult<Vec<CharacterSummary>>;
+}
+
+#[async_trait]
+impl<T> CharacterCatalogReadPort for Arc<T>
+where
+    T: CharacterCatalogReadPort + Send + Sync + ?Sized,
+{
+    async fn list_characters(&self) -> AppResult<Vec<CharacterSummary>> {
+        (**self).list_characters().await
+    }
 }
 
 #[async_trait]

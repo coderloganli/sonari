@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sonari test client</title>
+    <script src="/dev/livekit-client.umd.min.js"></script>
+    <style>
+      body {
+        font: 16px/1.5 system-ui, sans-serif;
+        max-width: 34rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        color: #17181c;
+        background: #fbfbfa;
+      }
+      h1 {
+        font-size: 1.3rem;
+      }
+      p.lede {
+        color: #5c5f6b;
+      }
+      label {
+        display: block;
+        margin: 1rem 0 0.25rem;
+        font-weight: 600;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        padding: 0.5rem;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      button {
+        margin-top: 1rem;
+        cursor: pointer;
+      }
+      button[disabled] {
+        cursor: default;
+        opacity: 0.5;
+      }
+      #status {
+        margin-top: 1.5rem;
+        padding: 0.75rem 1rem;
+        border-left: 3px solid #9aa0b0;
+        background: #f1f2f4;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #status.failed {
+        border-left-color: #c0392b;
+        background: #fbeceb;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Sonari test client</h1>
+    <p class="lede">
+      For trying a call by hand. Android is the product surface; this page is a
+      test tool.
+    </p>
+
+    <label for="uid">uid</label>
+    <input id="uid" value="brave-otter-4417" autocomplete="off" />
+
+    <label for="persona">persona</label>
+    <select id="persona">
+      <option value="">— connect to load the list —</option>
+    </select>
+
+    <button id="call">Call</button>
+    <button id="hangup" disabled>Hang up</button>
+
+    <p id="status">Idle.</p>
+
+    <script>
+      const statusElement = document.getElementById('status');
+      const uidInput = document.getElementById('uid');
+      const personaSelect = document.getElementById('persona');
+      const callButton = document.getElementById('call');
+      const hangupButton = document.getElementById('hangup');
+
+      // A failure is spoken or reported, never silence — the rule the call
+      // itself follows. Everything this page does ends up here.
+      function say(message, failed) {
+        statusElement.textContent = message;
+        statusElement.classList.toggle('failed', Boolean(failed));
+      }
+
+      /// Turns a response into its `data`, or throws with what the server said.
+      async function unwrap(response) {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          const message = payload && payload.message ? payload.message : response.statusText;
+          throw new Error(`${response.status} ${message}`);
+        }
+        return payload ? payload.data : null;
+      }
+
+      let sessionToken = null;
+      let sessionId = null;
+      let room = null;
+
+      // The list is fetched before anything else: character ids are derived
+      // from persona names and are not something a person can know.
+      async function loadPersonas() {
+        const response = await fetch('/api/personas');
+        const personas = await unwrap(response);
+        personaSelect.innerHTML = '';
+        if (!personas || personas.length === 0) {
+          personaSelect.innerHTML = '<option value="">— none configured —</option>';
+          say('No persona is configured. Add one to sonari.toml.', true);
+          return;
+        }
+        for (const persona of personas) {
+          const option = document.createElement('option');
+          option.value = persona.character_id;
+          option.textContent = persona.scene_name
+            ? `${persona.name} — ${persona.scene_name}`
+            : persona.name;
+          personaSelect.appendChild(option);
+        }
+        say(`${personas.length} persona(s) loaded. Pick one and call.`);
+      }
+
+      async function startSession() {
+        const response = await fetch('/api/session', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ uid: uidInput.value.trim() }),
+        });
+        const session = await unwrap(response);
+        // One of two tokens called access_token. This one authorises the HTTP
+        // calls below; the room token arrives with the call.
+        sessionToken = session.access_token;
+      }
+
+      async function startCall(characterId) {
+        const response = await fetch(`/api/call/${characterId}/start`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${sessionToken}`,
+          },
+          body: JSON.stringify({}),
+        });
+        return await unwrap(response);
+      }
+
+      async function endCall(id) {
+        const response = await fetch('/api/call/end', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${sessionToken}`,
+          },
+          body: JSON.stringify({ session_id: id }),
+        });
+        await unwrap(response);
+      }
+
+      /// Ends the call on the server if one is still open, and returns the page
+      /// to a state where another can be made. Never throws: it runs on paths
+      /// that are already reporting a failure.
+      async function release() {
+        const open = sessionId;
+        sessionId = null;
+        if (open !== null) {
+          try {
+            await endCall(open);
+          } catch (error) {
+            say(
+              `Call ended locally, but the server was not told: ${
+                error && error.message ? error.message : error
+              }`,
+              true,
+            );
+          }
+        }
+        hangupButton.disabled = true;
+        callButton.disabled = false;
+      }
+
+      async function join(call) {
+        const { Room, RoomEvent, Track } = LivekitClient;
+        // The second of the two access_tokens: the LiveKit room token.
+        const realtimeToken = call.realtime.access_token;
+        room = new Room();
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === Track.Kind.Audio) {
+            document.body.appendChild(track.attach());
+            say('Connected. Talk — speaking over the agent interrupts it.');
+          }
+        });
+        // A lost connection ends the session; the caller starts a new one.
+        // Leaving the row open on the server would make the next call the
+        // second active session for a person who only ever made one.
+        room.on(RoomEvent.Disconnected, () => {
+          say('Disconnected.');
+          room = null;
+          release();
+        });
+        await room.connect(call.realtime.endpoint, realtimeToken);
+        await room.localParticipant.setMicrophoneEnabled(true);
+      }
+
+      callButton.addEventListener('click', async () => {
+        callButton.disabled = true;
+        try {
+          say('Creating a session…');
+          await startSession();
+          if (!personaSelect.value) {
+            say('Loading personas…');
+            await loadPersonas();
+          }
+          if (!personaSelect.value) {
+            callButton.disabled = false;
+            return;
+          }
+          say('Starting the call…');
+          const call = await startCall(personaSelect.value);
+          sessionId = call.session_id;
+          say('Joining the room…');
+          await join(call);
+          hangupButton.disabled = false;
+        } catch (error) {
+          say(`Failed: ${error && error.message ? error.message : error}`, true);
+          // The call may already exist on the server: failing to join a room
+          // does not close the session that room belongs to.
+          await release();
+        }
+      });
+
+      hangupButton.addEventListener('click', async () => {
+        hangupButton.disabled = true;
+        try {
+          if (room) {
+            await room.disconnect();
+            room = null;
+          }
+          // Disconnecting fires the handler that ends the call; if it did not
+          // fire, this does it.
+          if (sessionId !== null) {
+            await release();
+          }
+          if (!statusElement.classList.contains('failed')) {
+            say('Call ended.');
+          }
+        } catch (error) {
+          say(`Failed to end the call: ${error && error.message ? error.message : error}`, true);
+          // The session may still be open, and this button is the only way to
+          // close it.
+          hangupButton.disabled = sessionId === null;
+          callButton.disabled = sessionId !== null;
+        }
+      });
+
+      // Loading the list needs no token, so the page can offer a choice before
+      // anyone types a uid.
+      loadPersonas().catch((error) => {
+        say(`Could not load personas: ${error && error.message ? error.message : error}`, true);
+      });
+    </script>
+  </body>
+</html>

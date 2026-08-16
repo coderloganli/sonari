@@ -97,7 +97,10 @@ pub async fn run() -> Result<()> {
     let character_call_context: Arc<dyn character_context::CharacterCallContextReadPort> =
         personas.clone();
     let character_prompt_context: Arc<dyn character_context::CharacterPromptContextReadPort> =
-        personas;
+        personas.clone();
+    // The same object the call path resolves ids through, so the list the API
+    // publishes and the ids a call accepts cannot drift.
+    let persona_catalog: Arc<dyn character_context::CharacterCatalogReadPort> = personas;
     let user_call_context: Arc<dyn user_context::UserCallContextReadPort> =
         Arc::new(crate::persona::AnonymousCallers);
 
@@ -236,6 +239,7 @@ pub async fn run() -> Result<()> {
         token_service,
         call_service: call_service.clone(),
         call_log_service,
+        persona_catalog,
     });
     tracing::info!("services assembled");
 

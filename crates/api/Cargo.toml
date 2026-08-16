@@ -12,6 +12,7 @@ base64 = "0.22.1"
 bytes = "1"
 uuid = { version = "1", features = ["v4"] }
 call = { path = "../call/control" }
+character-context = { path = "../character-context" }
 call-log-contract = { path = "../call/log-contract" }
 call-execution = { path = "../call/execution" }
 rtc-control-contract = { path = "../call/rtc/control-contract" }

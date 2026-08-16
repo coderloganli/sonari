@@ -27,6 +27,7 @@ exists to make that testable.
 | Personas | Operator-authored: a character and the scene they are in |
 | Identity | A `uid` the caller enters or is assigned |
 | Client | Android — enter a `uid`, choose a character and scene, talk |
+| Trying it by hand | A browser test client at `/dev`, served by the binary itself (ADR-0018) |
 | Evaluation | An automated harness and a headless caller, both runnable in CI |
 
 **v2** — long-term memory, and work on how human the agent sounds. v1 records
@@ -97,4 +98,4 @@ say so.
 | Self-hosted models | The engineering interest is the pipeline, not operating GPUs (ADR-0014) |
 | Tool calling | v1 is conversation. Tools add a second round trip inside a turn, which a phone call feels |
 | Multi-tenancy | One deployment, one operator, personas in a file |
-| A web client | Android is the product surface; a browser page would be a test tool, and the automated tests cover that better |
+| A web *product* client | Android is the product surface. A browser page is shipped at `/dev` as a test tool and is named one (ADR-0018) — it exists because a person needs to hear the call, which no automated test can judge |
