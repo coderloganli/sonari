@@ -37,6 +37,7 @@ mod tests {
             perceived_latency_ms: None,
             hangover_cost_ms: None,
             utterance_count: None,
+            server_turns: None,
             turn_opened: None,
             epochs_ok: 1,
             epochs_failed: 0,

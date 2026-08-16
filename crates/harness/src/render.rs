@@ -60,6 +60,17 @@ pub fn table(report: &BatchReport, samples: &[Sample]) -> String {
             format!("{opened:<26} TRANSCRIPT {text:?}")
         }
     }));
+    // A caller who says nothing. Reported as a count rather than a verdict:
+    // whether the agent ought to speak into a silence is a product question this
+    // set does not get to answer, and a line that implied one nearly produced a
+    // bug report about correct behaviour.
+    out.push_str(&group(report, samples, "idle", |row, _| {
+        match row.server_turns.unwrap_or(0) {
+            0 => "no server turn at all — not even a greeting".to_owned(),
+            1 => "1 server turn (the greeting); the agent did not speak again".to_owned(),
+            n => format!("{n} server turns; the agent spoke again unprompted"),
+        }
+    }));
     out.push_str(&group(report, samples, "malformed", |row, _| {
         match &row.status {
             SampleStatus::Failed { reason } => format!("{:<26} rejected: {reason}", ""),
@@ -287,6 +298,7 @@ mod tests {
             perceived_latency_ms: None,
             hangover_cost_ms: None,
             utterance_count: Some(utterances),
+            server_turns: Some(1),
             turn_opened: Some(true),
             epochs_ok: 1,
             epochs_failed: 0,

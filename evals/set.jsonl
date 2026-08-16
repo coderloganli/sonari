@@ -1,15 +1,16 @@
-{"audio":"clips/pause-400.wav","id":"pause-400","probe":{"audio_ms":4183,"gap_ms":400,"gap_start_ms":1562,"kind":"pause"},"reference":"i'd like a table for four people"}
-{"audio":"clips/pause-600.wav","id":"pause-600","probe":{"audio_ms":4584,"gap_ms":600,"gap_start_ms":1445,"kind":"pause"},"reference":"can you send it to the office address"}
-{"audio":"clips/pause-800.wav","id":"pause-800","probe":{"audio_ms":4631,"gap_ms":800,"gap_start_ms":1394,"kind":"pause"},"reference":"my order number is eight two nine one"}
-{"audio":"clips/pause-1200.wav","id":"pause-1200","probe":{"audio_ms":5296,"gap_ms":1200,"gap_start_ms":1744,"kind":"pause"},"reference":"i want to change my flight to next tuesday"}
-{"audio":"clips/short-yeah.wav","id":"short-yeah","probe":{"audio_ms":2350,"kind":"short","speech_ms":350},"reference":"yeah"}
-{"audio":"clips/short-no.wav","id":"short-no","probe":{"audio_ms":2414,"kind":"short","speech_ms":414},"reference":"no"}
-{"audio":"clips/short-two.wav","id":"short-two","probe":{"audio_ms":2402,"kind":"short","speech_ms":402},"reference":"two"}
-{"audio":"clips/decay-address.wav","id":"decay-address","probe":{"audio_ms":3525,"decay_start_ms":1225,"floor_dbfs":-30.0,"kind":"decay"},"reference":"it's forty two oak street"}
-{"audio":"clips/decay-name.wav","id":"decay-name","probe":{"audio_ms":3410,"decay_start_ms":1110,"floor_dbfs":-30.0,"kind":"decay"},"reference":"my name is jonathan whitfield"}
-{"audio":"clips/baseline-booking.wav","id":"baseline-booking","probe":{"audio_ms":4496,"kind":"baseline","speech_end_ms":2996},"reference":"hi i'd like to book a table for four people this evening"}
-{"audio":"clips/baseline-question.wav","id":"baseline-question","probe":{"audio_ms":3686,"kind":"baseline","speech_end_ms":2186},"reference":"what time do you close on sundays"}
-{"audio":"clips/baseline-change.wav","id":"baseline-change","probe":{"audio_ms":4590,"kind":"baseline","speech_end_ms":3090},"reference":"actually can you change that to seven thirty instead"}
+{"audio":"clips/pause-400.wav","id":"pause-400","probe":{"audio_ms":4305,"gap_ms":400,"gap_start_ms":1659,"kind":"pause"},"reference":"i'd like a table for four people"}
+{"audio":"clips/pause-600.wav","id":"pause-600","probe":{"audio_ms":4739,"gap_ms":600,"gap_start_ms":1573,"kind":"pause"},"reference":"can you send it to the office address"}
+{"audio":"clips/pause-800.wav","id":"pause-800","probe":{"audio_ms":4883,"gap_ms":800,"gap_start_ms":1643,"kind":"pause"},"reference":"my order number is eight two nine one"}
+{"audio":"clips/pause-1200.wav","id":"pause-1200","probe":{"audio_ms":5297,"gap_ms":1200,"gap_start_ms":1752,"kind":"pause"},"reference":"i want to change my flight to next tuesday"}
+{"audio":"clips/short-yeah.wav","id":"short-yeah","probe":{"audio_ms":2369,"kind":"short","speech_ms":369},"reference":"yeah"}
+{"audio":"clips/short-no.wav","id":"short-no","probe":{"audio_ms":2401,"kind":"short","speech_ms":401},"reference":"no"}
+{"audio":"clips/short-two.wav","id":"short-two","probe":{"audio_ms":2378,"kind":"short","speech_ms":378},"reference":"two"}
+{"audio":"clips/decay-address.wav","id":"decay-address","probe":{"audio_ms":3381,"decay_start_ms":1081,"floor_dbfs":-30.0,"kind":"decay"},"reference":"it's forty two oak street"}
+{"audio":"clips/decay-name.wav","id":"decay-name","probe":{"audio_ms":3455,"decay_start_ms":1155,"floor_dbfs":-30.0,"kind":"decay"},"reference":"my name is jonathan whitfield"}
+{"audio":"clips/baseline-booking.wav","id":"baseline-booking","probe":{"audio_ms":5071,"kind":"baseline","speech_end_ms":3571},"reference":"hi i'd like to book a table for four people this evening"}
+{"audio":"clips/baseline-question.wav","id":"baseline-question","probe":{"audio_ms":3669,"kind":"baseline","speech_end_ms":2169},"reference":"what time do you close on sundays"}
+{"audio":"clips/baseline-change.wav","id":"baseline-change","probe":{"audio_ms":4636,"kind":"baseline","speech_end_ms":3136},"reference":"actually can you change that to seven thirty instead"}
 {"audio":"clips/edge-silence.wav","id":"edge-silence","probe":{"audio_ms":5000,"kind":"nothing"},"reference":""}
+{"audio":"clips/idle-force-agent.wav","id":"idle-force-agent","probe":{"audio_ms":12000,"kind":"idle"},"reference":""}
 {"audio":"clips/edge-cough.wav","id":"edge-cough","probe":{"audio_ms":2150,"burst_ms":150,"burst_start_ms":500,"kind":"nothing"},"reference":""}
 {"audio":"clips/edge-8khz-stereo.wav","id":"edge-8khz-stereo","probe":{"channels":2,"kind":"malformed","sample_rate_hz":8000},"reference":"what time do you close on sundays"}

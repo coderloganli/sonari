@@ -118,7 +118,14 @@ pub struct EndpointingSettings {
     /// Silence after speech before the turn is considered over.
     #[serde(default = "default_silence_flush_ms")]
     pub silence_flush_ms: u32,
-    /// Silence with no speech at all before the agent speaks first.
+    /// How long to wait for recognition's final result before going ahead with
+    /// the partial it has.
+    ///
+    /// The name reads like "speak first if the caller is silent", and it is not
+    /// that: the deadline is set at commit time, minus `silence_flush_ms`, and
+    /// spends itself in `take_forced_transcript_turn_if_overdue`. A caller who
+    /// says nothing gets no turn from it. Measured, after the name sent an
+    /// evaluation clip looking for behaviour that was never promised.
     #[serde(default = "default_silence_force_agent_ms")]
     pub silence_force_agent_ms: u32,
     /// Shortest utterance worth sending. Below this it is a cough.

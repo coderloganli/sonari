@@ -37,10 +37,19 @@ by the time the agent speaks, sometimes it is not.
   "the agent is speaking", say — cannot assume its stream is live the moment it
   subscribes.
 
-## One observation left over
+## The observation left over, and what it turned out to be
 
-In the silent run the caller sent nothing but noise floor from second 5 to second
-24, and `silence_force_agent_ms` is 8000, so the agent should have spoken on its
-own. The track stayed at zero throughout. Whether that timer fires at all is
-unmeasured, and would be worth a clip of its own: an evaluation set that only
-ever speaks cannot see it.
+The silent run showed the agent never speaking again, and `silence_force_agent_ms`
+is 8000, which read like a promise it had broken. A clip was added to measure it
+— `idle-force-agent`, twelve seconds of nothing — and it reported one server turn,
+the greeting, and no more.
+
+Reading the code before reporting that: the setting is not what its name says.
+The deadline is set at commit time as `silence_force_agent_ms - silence_flush_ms`
+and is spent in `take_forced_transcript_turn_if_overdue` — it is how long to wait
+for recognition's final result before proceeding with the partial. A caller who
+says nothing gets no turn from it, and the agent's silence was correct.
+
+The comment in `crates/config` now says what the code does. The clip stays: what
+happens when a caller says nothing is worth watching whether or not a setting
+promises it, and the report states the count without implying a verdict.

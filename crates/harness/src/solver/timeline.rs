@@ -45,6 +45,8 @@ const ASR_FINAL: &str = "speech_asr_final_received";
 /// actually driven with, so scoring without it would report a recognition
 /// failure for a turn that recognised something.
 const ASR_FORCED: &str = "speech_asr_forced_finalized";
+/// The agent deciding to speak without being spoken to.
+const SERVER_TURN: &str = "server_turn_started";
 
 /// Assembles the first completed turn in the timeline.
 ///
@@ -68,6 +70,7 @@ pub fn assemble(events: &[TimelineEvent]) -> Result<Outcome, TimelineError> {
             reply: String::new(),
             markers: Markers::default(),
             utterance_count: 0,
+            server_turns: count(events, SERVER_TURN),
             turn_opened: false,
         });
     };
@@ -115,8 +118,13 @@ pub fn assemble(events: &[TimelineEvent]) -> Result<Outcome, TimelineError> {
             audio_first_frame_ms: ms("audio_first_frame_ms").or_else(|| ms("tts_first_chunk_ms")),
         },
         utterance_count,
+        server_turns: count(events, SERVER_TURN),
         turn_opened: events.iter().any(|entry| entry.event == SPEECH_DETECTED),
     })
+}
+
+fn count(events: &[TimelineEvent], name: &str) -> usize {
+    events.iter().filter(|entry| entry.event == name).count()
 }
 
 /// An event belongs to the turn if it names the same round. Events without a

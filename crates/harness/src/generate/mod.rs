@@ -200,6 +200,13 @@ async fn assemble(
                 "audio_ms": samples_to_ms(samples.len()),
             });
         }
+        Shape::Idle { ms } => {
+            samples = noise.floor(*ms);
+            probe = serde_json::json!({
+                "kind": "idle",
+                "audio_ms": samples_to_ms(samples.len()),
+            });
+        }
         Shape::Silence { ms } => {
             samples = noise.floor(*ms);
             probe = serde_json::json!({
@@ -366,9 +373,11 @@ mod tests {
         assert_eq!(samples.len() % 2, 0, "interleaved stereo");
     }
 
-    /// The whole set, without a network: fifteen clips and a manifest line each.
+    /// The whole set, without a network. The count is asserted so that adding a
+    /// clip is a deliberate act: the set is the instrument, and it changing
+    /// quietly would make two reports incomparable without saying so.
     #[tokio::test]
-    async fn the_plan_covers_fifteen_clips() {
-        assert_eq!(plan::clips().len(), 15);
+    async fn the_plan_covers_sixteen_clips() {
+        assert_eq!(plan::clips().len(), 16);
     }
 }

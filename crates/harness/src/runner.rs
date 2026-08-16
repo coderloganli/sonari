@@ -122,6 +122,7 @@ async fn run_sample(sample: &Sample, solver: &dyn Solver, config: &BatchConfig) 
             perceived_latency_ms: None,
             hangover_cost_ms: None,
             utterance_count: None,
+            server_turns: None,
             turn_opened: None,
             epochs_ok,
             epochs_failed,
@@ -148,6 +149,7 @@ async fn run_sample(sample: &Sample, solver: &dyn Solver, config: &BatchConfig) 
         perceived_latency_ms: markers.perceived_latency_ms(),
         hangover_cost_ms: markers.hangover_cost_ms(),
         utterance_count: Some(first.utterance_count),
+        server_turns: Some(first.server_turns),
         turn_opened: Some(first.turn_opened),
         epochs_ok,
         epochs_failed,
@@ -312,6 +314,7 @@ mod tests {
                 transcript: transcript.to_owned(),
                 reply: "sure".to_owned(),
                 utterance_count: 1,
+                server_turns: 0,
                 turn_opened: true,
                 markers: Markers {
                     speech_start_ms: Some(100.0),

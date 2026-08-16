@@ -25,6 +25,10 @@ pub struct Outcome {
     /// How many separate utterances the recording produced. One means the turn
     /// was never cut; two means something ended it partway through the clip.
     pub utterance_count: usize,
+    /// Turns the agent started on its own, without the caller saying anything.
+    /// The greeting is one; a second means the service filled a silence, which
+    /// is what `silence_force_agent_ms` is for and what nothing else observes.
+    pub server_turns: usize,
     /// Whether the system judged the audio to be speech at all. False means it
     /// was discarded as noise and never reached recognition — a different
     /// failure from recognition returning nothing.

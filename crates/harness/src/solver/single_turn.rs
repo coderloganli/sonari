@@ -158,6 +158,7 @@ impl SingleTurnSolver {
                     ..Markers::default()
                 },
                 utterance_count: 0,
+                server_turns: 0,
                 turn_opened: false,
             });
         }
@@ -240,6 +241,8 @@ impl SingleTurnSolver {
                 audio_first_frame_ms: Some(ms(first_chunk)),
             },
             utterance_count: 1,
+            // Nothing here greets or fills a silence; there is no service.
+            server_turns: 0,
             turn_opened: true,
         })
     }

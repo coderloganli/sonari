@@ -34,6 +34,9 @@ pub enum Shape {
     Plain { sentence: String },
     /// No speech at all.
     Silence { ms: u32 },
+    /// A caller who joins and says nothing, for longer than the service waits
+    /// before speaking first.
+    Idle { ms: u32 },
     /// A cough: loud, brief, not words.
     Burst { ms: u32 },
     /// The wrong format, so the rejection path has something to reject.
@@ -124,6 +127,14 @@ pub fn clips() -> Vec<Clip> {
             id: "edge-silence".to_owned(),
             reference: String::new(),
             shape: Shape::Silence { ms: 5_000 },
+        },
+        // `silence_force_agent_ms` is eight seconds, so twelve gives it room to
+        // fire and room to be seen not firing. A set that only ever speaks
+        // cannot observe what happens when nobody does.
+        Clip {
+            id: "idle-force-agent".to_owned(),
+            reference: String::new(),
+            shape: Shape::Idle { ms: 12_000 },
         },
         Clip {
             id: "edge-cough".to_owned(),

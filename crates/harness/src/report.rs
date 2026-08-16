@@ -42,6 +42,8 @@ pub struct SampleReport {
     pub perceived_latency_ms: Option<f64>,
     pub hangover_cost_ms: Option<f64>,
     pub utterance_count: Option<usize>,
+    /// See [`crate::solver::Outcome::server_turns`].
+    pub server_turns: Option<usize>,
     pub turn_opened: Option<bool>,
     pub epochs_ok: usize,
     pub epochs_failed: usize,
