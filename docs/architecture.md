@@ -51,6 +51,13 @@ begins and when it ends.
 **One binary.** The control plane and the media plane are one process
 (ADR-0002); the split is logical.
 
+**The client in the diagram is Android in production, and a browser page in
+development.** The binary serves a single-page test client at `GET /dev`, with
+its HTML and a vendored copy of the LiveKit browser SDK compiled in
+(ADR-0018, ADR-0019). It is same-origin with the API, so there is no CORS layer
+anywhere. It walks the ordinary contract and gets no privilege: session, list
+personas, start call, join the room, end call.
+
 ---
 
 ## 2. Crates
@@ -67,7 +74,7 @@ begins and when it ends.
 | `call/worker` | The media plane: pipeline, mixer, playback | `call/*`, `voice` |
 | `call/control`, `call/execution` | Call lifecycle, dispatch, persistence | `shared-kernel` |
 | `platform/postgres` | Schema, migrations | — |
-| `api`, `app` | HTTP routes; composition root | all |
+| `api`, `app` | HTTP routes, the `/dev` test client; composition root | all |
 | `harness` | Drives one turn from a WAV file, reports the cost | `providers`, `agent` |
 
 No credential appears in any provider trait signature. Adapters take their key
@@ -121,7 +128,9 @@ is sufficient to hold a conversation.
 ## 5. Identity
 
 There is no login. A `uid` is a human-typeable string; creating a session with
-one returns a token. The identity is derived from the `uid` rather than
+one returns a token. `POST /api/session` and `GET /api/personas` are the two
+unauthenticated routes: one mints the token, the other lists what can be called
+(ADR-0020). Everything under `/api/call` requires the token. The identity is derived from the `uid` rather than
 allocated, so the same `uid` reaches the same history on any device without a
 user table.
 

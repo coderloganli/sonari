@@ -940,9 +940,15 @@ impl SpeechPipeline {
                 tokio::select! {
                     changed = drain_shutdown_rx.changed() => {
                         match changed {
-                            Ok(()) if *drain_shutdown_rx.borrow() => break,
+                            Ok(()) if *drain_shutdown_rx.borrow() => {
+                                tracing::info!("worker inbound drain stopping: shutdown");
+                                break;
+                            }
                             Ok(()) => {}
-                            Err(_) => break,
+                            Err(_) => {
+                                tracing::info!("worker inbound drain stopping: shutdown channel gone");
+                                break;
+                            }
                         }
                     }
                     frame = input.next_frame() => {
@@ -959,9 +965,18 @@ impl SpeechPipeline {
                                         );
                                     }
                                 }
-                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => break,
+                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                    tracing::info!("worker inbound drain stopping: consumer gone");
+                                    break;
+                                }
                             },
-                            Ok(None) => break,
+                            // The caller's audio simply stopped arriving. Which
+                            // of the several reasons it can do that is the whole
+                            // question when a call goes quiet, so say so.
+                            Ok(None) => {
+                                tracing::warn!("worker inbound drain stopping: caller audio stream ended");
+                                break;
+                            }
                             Err(error) => {
                                 tracing::warn!(error = %error, "worker user audio input stream ended");
                                 break;

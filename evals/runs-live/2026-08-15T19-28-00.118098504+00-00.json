@@ -1,0 +1,476 @@
+{
+  "run_at": "2026-08-15T19:28:00.118098504+00:00",
+  "solver": "live",
+  "epochs": 1,
+  "note": "At this set size the confidence interval on WER is roughly ±5-10 points absolute. This is a regression tripwire and a category-failure detector, not an instrument for ranking systems a point apart.",
+  "config": {
+    "asr_model": "scribe_v2_realtime",
+    "tts_model": "eleven_flash_v2_5",
+    "llm_model": "grok-4.20-0309-non-reasoning",
+    "silence_flush_ms": 700,
+    "min_utterance_ms": 300,
+    "min_speech_confirm_ms": 150,
+    "voice_activity_threshold": 0
+  },
+  "summary": {
+    "corpus_wer": 0.04411764705882353,
+    "wer_p50": 0.0,
+    "wer_p90": 0.18000000000000008,
+    "wer_max": 0.2222222222222222,
+    "substitutions": 0,
+    "deletions": 3,
+    "insertions": 0,
+    "reference_words": 68,
+    "system_response": {
+      "p50": 853.5,
+      "p95": 975.9499999999999
+    },
+    "perceived_latency": {
+      "p50": 1553.0,
+      "p95": 1676.5
+    },
+    "asr_final": {
+      "p50": 2075.0,
+      "p95": 3307.85
+    },
+    "llm_first_token": {
+      "p50": 2566.0,
+      "p95": 3842.0499999999997
+    },
+    "llm_first_sentence": {
+      "p50": 2578.5,
+      "p95": 3917.25
+    },
+    "tts_first_chunk": {
+      "p50": 2830.5,
+      "p95": 4142.0
+    },
+    "samples_ok": 14,
+    "samples_failed": 1,
+    "false_triggers": 0,
+    "silent_clips": 2
+  },
+  "samples": [
+    {
+      "id": "pause-400",
+      "status": "ok",
+      "transcript": "I'd like a table for four people.",
+      "wer": 0.0,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "reference_words": 7
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 2180.0,
+        "speech_end_ms": 2880.0,
+        "asr_final_ms": 2970.0,
+        "llm_first_token_ms": 3413.0,
+        "llm_first_sentence_ms": 3457.0,
+        "tts_first_chunk_ms": 3711.0,
+        "audio_first_frame_ms": 3711.0
+      },
+      "system_response_ms": 831.0,
+      "perceived_latency_ms": 1531.0,
+      "hangover_cost_ms": 700.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "pause-600",
+      "status": "ok",
+      "transcript": "Can you send it to the office address?",
+      "wer": 0.0,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "reference_words": 8
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 2570.0,
+        "speech_end_ms": 3270.0,
+        "asr_final_ms": 3359.0,
+        "llm_first_token_ms": 3902.0,
+        "llm_first_sentence_ms": 3953.0,
+        "tts_first_chunk_ms": 4175.0,
+        "audio_first_frame_ms": 4175.0
+      },
+      "system_response_ms": 905.0,
+      "perceived_latency_ms": 1605.0,
+      "hangover_cost_ms": 700.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "pause-800",
+      "status": "ok",
+      "transcript": "My order number is...",
+      "wer": 0.2,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 1,
+        "insertions": 0,
+        "reference_words": 5
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 880.0,
+        "speech_end_ms": 1579.0,
+        "asr_final_ms": 1679.0,
+        "llm_first_token_ms": 2121.0,
+        "llm_first_sentence_ms": 2146.0,
+        "tts_first_chunk_ms": 2375.0,
+        "audio_first_frame_ms": 2375.0
+      },
+      "system_response_ms": 796.0,
+      "perceived_latency_ms": 1495.0,
+      "hangover_cost_ms": 699.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "pause-1200",
+      "status": "ok",
+      "transcript": "I wanna change my flight to...",
+      "wer": 0.2222222222222222,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 2,
+        "insertions": 0,
+        "reference_words": 9
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 1219.0,
+        "speech_end_ms": 1919.0,
+        "asr_final_ms": 2070.0,
+        "llm_first_token_ms": 2530.0,
+        "llm_first_sentence_ms": 2555.0,
+        "tts_first_chunk_ms": 2829.0,
+        "audio_first_frame_ms": 2829.0
+      },
+      "system_response_ms": 910.0,
+      "perceived_latency_ms": 1610.0,
+      "hangover_cost_ms": 700.0,
+      "utterance_count": 2,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "short-yeah",
+      "status": "ok",
+      "transcript": "Yeah.",
+      "wer": 0.0,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "reference_words": 1
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 335.0,
+        "speech_end_ms": 1034.0,
+        "asr_final_ms": 1135.0,
+        "llm_first_token_ms": 1630.0,
+        "llm_first_sentence_ms": 1670.0,
+        "tts_first_chunk_ms": 1870.0,
+        "audio_first_frame_ms": 1870.0
+      },
+      "system_response_ms": 836.0,
+      "perceived_latency_ms": 1535.0,
+      "hangover_cost_ms": 699.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "short-no",
+      "status": "ok",
+      "transcript": "No.",
+      "wer": 0.0,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "reference_words": 1
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 421.0,
+        "speech_end_ms": 1120.0,
+        "asr_final_ms": 1230.0,
+        "llm_first_token_ms": 1712.0,
+        "llm_first_sentence_ms": 1764.0,
+        "tts_first_chunk_ms": 1983.0,
+        "audio_first_frame_ms": 1983.0
+      },
+      "system_response_ms": 863.0,
+      "perceived_latency_ms": 1562.0,
+      "hangover_cost_ms": 699.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "short-two",
+      "status": "ok",
+      "transcript": "Two.",
+      "wer": 0.0,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "reference_words": 1
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 399.0,
+        "speech_end_ms": 1099.0,
+        "asr_final_ms": 1200.0,
+        "llm_first_token_ms": 1640.0,
+        "llm_first_sentence_ms": 1689.0,
+        "tts_first_chunk_ms": 1833.0,
+        "audio_first_frame_ms": 1833.0
+      },
+      "system_response_ms": 734.0,
+      "perceived_latency_ms": 1434.0,
+      "hangover_cost_ms": 700.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "decay-address",
+      "status": "ok",
+      "transcript": "It's 42 Oak Street.",
+      "wer": 0.0,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "reference_words": 4
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 1171.0,
+        "speech_end_ms": 1871.0,
+        "asr_final_ms": 2051.0,
+        "llm_first_token_ms": 2527.0,
+        "llm_first_sentence_ms": 2548.0,
+        "tts_first_chunk_ms": 2797.0,
+        "audio_first_frame_ms": 2797.0
+      },
+      "system_response_ms": 926.0,
+      "perceived_latency_ms": 1626.0,
+      "hangover_cost_ms": 700.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "decay-name",
+      "status": "ok",
+      "transcript": "My name is Jonathan Whitfield.",
+      "wer": 0.0,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "reference_words": 5
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 1290.0,
+        "speech_end_ms": 1990.0,
+        "asr_final_ms": 2080.0,
+        "llm_first_token_ms": 2602.0,
+        "llm_first_sentence_ms": 2602.0,
+        "tts_first_chunk_ms": 2832.0,
+        "audio_first_frame_ms": 2832.0
+      },
+      "system_response_ms": 842.0,
+      "perceived_latency_ms": 1542.0,
+      "hangover_cost_ms": 700.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "baseline-booking",
+      "status": "ok",
+      "transcript": "Hi. I'd like to book a table for four people this evening.",
+      "wer": 0.0,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "reference_words": 12
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 2470.0,
+        "speech_end_ms": 3171.0,
+        "asr_final_ms": 3266.0,
+        "llm_first_token_ms": 3793.0,
+        "llm_first_sentence_ms": 3888.0,
+        "tts_first_chunk_ms": 4115.0,
+        "audio_first_frame_ms": 4115.0
+      },
+      "system_response_ms": 944.0,
+      "perceived_latency_ms": 1645.0,
+      "hangover_cost_ms": 701.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "baseline-question",
+      "status": "ok",
+      "transcript": "What time do you close on Sundays?",
+      "wer": 0.0,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "reference_words": 7
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 1579.0,
+        "speech_end_ms": 2279.0,
+        "asr_final_ms": 2400.0,
+        "llm_first_token_ms": 2961.0,
+        "llm_first_sentence_ms": 3058.0,
+        "tts_first_chunk_ms": 3294.0,
+        "audio_first_frame_ms": 3294.0
+      },
+      "system_response_ms": 1015.0,
+      "perceived_latency_ms": 1715.0,
+      "hangover_cost_ms": 700.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "baseline-change",
+      "status": "ok",
+      "transcript": "Actually, can you change that to 7:30 instead?",
+      "wer": 0.0,
+      "errors": {
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "reference_words": 8
+      },
+      "markers": {
+        "speech_start_ms": 0.0,
+        "speech_last_voiced_ms": 2470.0,
+        "speech_end_ms": 3170.0,
+        "asr_final_ms": 3260.0,
+        "llm_first_token_ms": 3738.0,
+        "llm_first_sentence_ms": 3865.0,
+        "tts_first_chunk_ms": 4014.0,
+        "audio_first_frame_ms": 4014.0
+      },
+      "system_response_ms": 844.0,
+      "perceived_latency_ms": 1544.0,
+      "hangover_cost_ms": 700.0,
+      "utterance_count": 1,
+      "turn_opened": true,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "edge-silence",
+      "status": "ok",
+      "transcript": "",
+      "wer": null,
+      "errors": null,
+      "markers": {
+        "speech_start_ms": null,
+        "speech_last_voiced_ms": null,
+        "speech_end_ms": null,
+        "asr_final_ms": null,
+        "llm_first_token_ms": null,
+        "llm_first_sentence_ms": null,
+        "tts_first_chunk_ms": null,
+        "audio_first_frame_ms": null
+      },
+      "system_response_ms": null,
+      "perceived_latency_ms": null,
+      "hangover_cost_ms": null,
+      "utterance_count": 0,
+      "turn_opened": false,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "edge-cough",
+      "status": "ok",
+      "transcript": "",
+      "wer": null,
+      "errors": null,
+      "markers": {
+        "speech_start_ms": null,
+        "speech_last_voiced_ms": null,
+        "speech_end_ms": null,
+        "asr_final_ms": null,
+        "llm_first_token_ms": null,
+        "llm_first_sentence_ms": null,
+        "tts_first_chunk_ms": null,
+        "audio_first_frame_ms": null
+      },
+      "system_response_ms": null,
+      "perceived_latency_ms": null,
+      "hangover_cost_ms": null,
+      "utterance_count": 0,
+      "turn_opened": false,
+      "epochs_ok": 1,
+      "epochs_failed": 0
+    },
+    {
+      "id": "edge-8khz-stereo",
+      "status": "failed",
+      "reason": "evals/clips/edge-8khz-stereo.wav is 8000 Hz with 2 channels; the pipeline carries 16000 Hz mono",
+      "transcript": null,
+      "wer": null,
+      "errors": null,
+      "markers": {
+        "speech_start_ms": null,
+        "speech_last_voiced_ms": null,
+        "speech_end_ms": null,
+        "asr_final_ms": null,
+        "llm_first_token_ms": null,
+        "llm_first_sentence_ms": null,
+        "tts_first_chunk_ms": null,
+        "audio_first_frame_ms": null
+      },
+      "system_response_ms": null,
+      "perceived_latency_ms": null,
+      "hangover_cost_ms": null,
+      "utterance_count": null,
+      "turn_opened": null,
+      "epochs_ok": 0,
+      "epochs_failed": 1
+    }
+  ]
+}

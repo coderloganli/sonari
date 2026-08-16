@@ -29,13 +29,17 @@ impl LocalAgentTurnAdapter {
 #[async_trait]
 impl AgentTurnPort for LocalAgentTurnAdapter {
     async fn chat_once(&self, request: AgentTurnRequest) -> AppResult<AgentTurnResult> {
-        let reply_text = self
+        let outcome = self
             .agent
             .chat_once(ChatCommand {
                 session_id: request.session_id,
                 user_message: request.user_message,
             })
             .await?;
-        Ok(AgentTurnResult { reply_text })
+        Ok(AgentTurnResult {
+            reply_text: outcome.reply_text,
+            first_token_at_ms: outcome.first_token_at_ms,
+            first_sentence_at_ms: outcome.first_sentence_at_ms,
+        })
     }
 }

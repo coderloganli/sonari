@@ -135,11 +135,21 @@ pub struct LlmCompletionRequest {
     pub tools: Vec<ToolDefinition>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// No `Eq`: the timings are floating point.
+#[derive(Debug, Clone, PartialEq)]
 pub struct LlmCompletionResponse {
     pub content: String,
     pub prompt_tokens: i32,
     pub completion_tokens: i32,
+    /// When the first token arrived, as epoch milliseconds.
+    ///
+    /// Recorded here because this is the only place that sees the stream, and
+    /// absolute because two of ADR-0010's markers are derived from it in another
+    /// crate — an offset would need an anchor, and the anchor would be a guess.
+    pub first_token_at_ms: Option<i64>,
+    /// When the first complete sentence existed — what synthesis can start on,
+    /// and therefore the earliest the reply could begin to be spoken.
+    pub first_sentence_at_ms: Option<i64>,
 }
 
 /// A tool the model may call. Declared per persona and dispatched by the

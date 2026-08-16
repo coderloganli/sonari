@@ -54,6 +54,11 @@ min_utterance_ms = 300
 # Speech must persist this long before a turn opens, or brief background noise
 # starts turns nobody began.
 min_speech_confirm_ms = 150
+# Mean absolute sample value above which a frame counts as voice. Above the
+# room's noise floor, below speech. At zero nothing is ever silent and a turn
+# never ends on its own.
+voice_activity_threshold = 300
+
 
 # The instructions wrapped around a persona. `conversation_system` is what makes
 # this a spoken conversation rather than a chat: without a length constraint a

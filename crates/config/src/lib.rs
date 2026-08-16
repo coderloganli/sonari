@@ -118,7 +118,14 @@ pub struct EndpointingSettings {
     /// Silence after speech before the turn is considered over.
     #[serde(default = "default_silence_flush_ms")]
     pub silence_flush_ms: u32,
-    /// Silence with no speech at all before the agent speaks first.
+    /// How long to wait for recognition's final result before going ahead with
+    /// the partial it has.
+    ///
+    /// The name reads like "speak first if the caller is silent", and it is not
+    /// that: the deadline is set at commit time, minus `silence_flush_ms`, and
+    /// spends itself in `take_forced_transcript_turn_if_overdue`. A caller who
+    /// says nothing gets no turn from it. Measured, after the name sent an
+    /// evaluation clip looking for behaviour that was never promised.
     #[serde(default = "default_silence_force_agent_ms")]
     pub silence_force_agent_ms: u32,
     /// Shortest utterance worth sending. Below this it is a cough.
@@ -128,6 +135,13 @@ pub struct EndpointingSettings {
     /// background noise starts turns nobody began.
     #[serde(default = "default_min_speech_confirm_ms")]
     pub min_speech_confirm_ms: u32,
+    /// Mean absolute sample value, above which a frame counts as voice.
+    ///
+    /// It has to sit above the room's noise floor and below speech. At zero
+    /// every frame is voice, silence is never observed, and a turn never ends on
+    /// its own — which is exactly what happened until this became configurable.
+    #[serde(default = "default_voice_activity_threshold")]
+    pub voice_activity_threshold: i16,
 }
 
 fn default_silence_flush_ms() -> u32 {
@@ -139,6 +153,13 @@ fn default_silence_force_agent_ms() -> u32 {
 fn default_min_utterance_ms() -> u32 {
     300
 }
+/// A −60 dBFS noise floor sits near 33 on this scale and measured speech runs in
+/// the thousands, so this clears the floor without reaching for the quiet end of
+/// a sentence. A starting point to be measured, not a tuned value.
+fn default_voice_activity_threshold() -> i16 {
+    300
+}
+
 fn default_min_speech_confirm_ms() -> u32 {
     150
 }
@@ -150,6 +171,7 @@ impl Default for EndpointingSettings {
             silence_force_agent_ms: default_silence_force_agent_ms(),
             min_utterance_ms: default_min_utterance_ms(),
             min_speech_confirm_ms: default_min_speech_confirm_ms(),
+            voice_activity_threshold: default_voice_activity_threshold(),
         }
     }
 }

@@ -71,7 +71,7 @@ database DSN, and where LiveKit is.
 | `crates/probe` | Joins a call over WebRTC as a caller that is not a person |
 | `crates/api`, `crates/app` | HTTP surface and the composition root |
 
-`docs/prd.md` says what it is for. `docs/architecture.md` describes how it fits
+`docs/product.md` says what it is for. `docs/architecture.md` describes how it fits
 together. `docs/adr/` records why, one decision per file, including the ones
 that were reversed. `crates/harness/OPTIMISATION-LOG.md` holds every latency
 figure that has been measured.

@@ -84,11 +84,16 @@ impl AsrEngine for ElevenLabsAsrEngine {
         // failures surface on the first poll rather than here.
         tokio::spawn(async move {
             tracing::info!("recognition task started");
-            if let Err(error) =
-                run_socket(url, api_key, sample_rate_hz, outbound_rx, &inbound_tx).await
-            {
-                tracing::error!(%error, "recognition session failed");
-                let _ = inbound_tx.send(Err(error)).await;
+            match run_socket(url, api_key, sample_rate_hz, outbound_rx, &inbound_tx).await {
+                Err(error) => {
+                    tracing::error!(%error, "recognition session failed");
+                    let _ = inbound_tx.send(Err(error)).await;
+                }
+                // A clean return means the caller dropped the stream or stopped
+                // sending. It ends the session just as firmly as an error does,
+                // and logging nothing made that indistinguishable from a task
+                // that was still connecting.
+                Ok(()) => tracing::info!("recognition session ended"),
             }
         });
 
@@ -215,6 +220,8 @@ async fn run_socket(
     // A handshake that never completes would otherwise look exactly like an
     // upload that is merely slow: frames pile up and the turn dies with a
     // confusing message instead of the real one.
+    tracing::info!(%url, "opening recognition session");
+    let opening = std::time::Instant::now();
     let socket = tokio::time::timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(request))
         .await
         .map_err(|_| AppError::unavailable("recognition session did not open in time"))?
@@ -222,7 +229,10 @@ async fn run_socket(
             AppError::unavailable(format!("failed to open recognition session: {error}"))
         })?
         .0;
-    tracing::info!("recognition session open");
+    tracing::info!(
+        elapsed_ms = opening.elapsed().as_millis() as u64,
+        "recognition session open"
+    );
     let (mut sink, mut stream) = socket.split();
 
     loop {

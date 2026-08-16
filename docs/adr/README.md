@@ -42,6 +42,9 @@ Reading the whole directory costs roughly 400 tokens per record. Reading this in
 | [0015](0015-delete-rather-than-retain-local-inference.md) | The local sherpa-onnx recognition and synthesis adapters are deleted, not kept behind configuration | Accepted | `providers` `scope` | 2026-08-08 |
 | [0016](0016-endpointing-stays-local.md) | The end of a turn is decided locally from the same signal that drives interruption; the recogniser is told when to commit | Accepted | `audio` `latency` `providers` | 2026-08-08 |
 | [0017](0017-observability-is-agent-readable-logs.md) | Telemetry is structured log lines read by an agent; no metrics backend, collector or dashboard | Accepted | `ops` `latency` | 2026-08-08 |
+| [0018](0018-browser-test-client-inside-the-binary.md) | A browser test client is served by the binary at `/dev`, assets compiled in; Android stays the product surface | Accepted | `ops` `scope` | 2026-08-16 |
+| [0019](0019-vendor-the-livekit-browser-sdk.md) | The LiveKit browser SDK is vendored at a pinned version rather than fetched from a CDN or built with npm | Accepted | `ops` `audio` | 2026-08-16 |
+| [0020](0020-personas-are-listed-over-the-api.md) | `GET /api/personas` publishes the derived persona ids, unauthenticated, so no client recomputes them | Accepted | `scope` `ops` | 2026-08-16 |
 
 ## Superseded
 
@@ -53,7 +56,7 @@ Reading the whole directory costs roughly 400 tokens per record. Reading this in
 
 ## By tag
 
-`process` 0002 0003 0004 0005 0006 0013 0014 · `audio` 0003 0004 0005 0007 0009 0014 0016 · `latency` 0003 0004 0009 0010 0014 0016 0017 · `providers` 0005 0006 0008 0009 0014 0015 0016 · `data` 0011 0012 · `ops` 0006 0007 0010 0012 0017 · `scope` 0001 0002 0008 0011 0013 0015
+`process` 0002 0003 0004 0005 0006 0013 0014 · `audio` 0003 0004 0005 0007 0009 0014 0016 0019 · `latency` 0003 0004 0009 0010 0014 0016 0017 · `providers` 0005 0006 0008 0009 0014 0015 0016 · `data` 0011 0012 · `ops` 0006 0007 0010 0012 0017 0018 0019 0020 · `scope` 0001 0002 0008 0011 0013 0015 0018 0020
 
 Tags are a closed vocabulary. Adding one requires a decision about what it means.
 

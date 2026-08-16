@@ -29,11 +29,12 @@ impl SpeechSegmentationConfigPort for ConfigEndpointing {
             silence_flush_ms: endpointing.silence_flush_ms,
             silence_force_agent_ms: endpointing.silence_force_agent_ms,
             min_speech_confirm_ms: endpointing.min_speech_confirm_ms,
-            // Compares PCM amplitude directly, which means nothing against a
-            // neural detector's speech probability. The field survives because
-            // the policy still reads it; replacing that policy is what makes it
-            // go away.
-            voice_activity_threshold: 0,
+            // Zero meant every frame counted as voice, so silence was never
+            // observed and a turn ended only when the caller hung up. Whether an
+            // amplitude comparison is the right instrument at all is a separate
+            // question — the Silero detector is already vendored — but it needs
+            // a usable value either way.
+            voice_activity_threshold: endpointing.voice_activity_threshold,
         })
     }
 }

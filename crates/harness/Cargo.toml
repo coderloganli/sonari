@@ -8,14 +8,30 @@ license.workspace = true
 name = "sonari-eval"
 path = "src/main.rs"
 
+[features]
+# The live solver joins a LiveKit room, which pulls in libwebrtc. That links
+# only on Linux (see docs/architecture.md §10), so it is opt-in and the rest of
+# the harness — scoring, aggregation, the report, clip generation — builds and
+# tests natively without it.
+default = []
+live = ["dep:livekit", "dep:libwebrtc"]
+
 [dependencies]
 agent = { path = "../agent" }
 anyhow.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
 futures.workspace = true
 hound.workspace = true
 providers = { path = "../providers" }
+reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sonari-config = { path = "../config" }
+speech-runtime = { path = "../call/speech-runtime" }
+thiserror.workspace = true
 tokio.workspace = true
 tracing-subscriber.workspace = true
+libwebrtc = { workspace = true, optional = true }
+livekit = { workspace = true, optional = true }
 voice = { path = "../voice" }

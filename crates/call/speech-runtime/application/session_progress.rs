@@ -112,6 +112,7 @@ mod tests {
             active_turn: None,
             candidate_speech_ms: 0,
             candidate_pcm: Vec::new(),
+            turn_timings: Default::default(),
         }
     }
 
@@ -174,6 +175,7 @@ mod tests {
             latest_partial_transcript: String::new(),
             commit_started_at_ms: None,
             force_agent_deadline_at_ms: None,
+            turn_timings: Default::default(),
         }]);
         let mut proposed = test_session();
         proposed.pending_rounds = VecDeque::new();

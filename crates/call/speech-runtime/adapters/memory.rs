@@ -243,6 +243,7 @@ mod tests {
             active_turn: None,
             candidate_speech_ms: 0,
             candidate_pcm: Vec::new(),
+            turn_timings: Default::default(),
         }
     }
 
