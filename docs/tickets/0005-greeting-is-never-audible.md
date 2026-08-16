@@ -1,52 +1,46 @@
-# 0005 — The caller may never hear the greeting
+# 0005 — The client sometimes starts listening after the greeting
 
-**Status**: Open · **Found by**: the evaluation harness, 2026-08-15 · **Area**: `call/worker` playback, or the client's audio stream
+**Status**: Resolved 2026-08-15 — not a service defect · **Found by**: the evaluation harness · **Area**: eval clients
 
-## What is seen
+## The question
 
-The probe now logs the loudest frame on the agent's track each second. Across a
-call whose service-side timeline shows a greeting synthesised and played:
+The probe heard nothing while the service logged a greeting synthesised and
+played, and heard the reply perfectly a moment later. Either the greeting never
+reached the room, or the client was not yet listening.
+
+## The answer
+
+It was the client. A second run, same build, same clip:
 
 ```
-the agent never greeted   loudest=0   threshold=100     ← ten seconds of nothing
-agent track level  second=3  peak=0
-agent track level  second=4  peak=12550                 ← after the caller spoke
-agent track level  second=5  peak=16486
-agent track level  second=6  peak=1139
+agent track level  second=1  peak=0
+agent track level  second=2  peak=12356    ← the greeting, plainly audible
+agent track level  second=3  peak=10522
+agent track level  second=4  peak=690
 ```
 
-The reply is plainly audible. The greeting, which the service logs as
-`speech_tts_started`, `speech_tts_first_chunk_received`, `speech_reply_finished`
-and `runtime_playback_completed` around 1.5–3.6 s into the call, arrives as
-zeros. Two runs agree.
+The greeting is written to the room and is loud. In the run where it was missed,
+the first per-second line was `second=3` — the client's audio stream produced no
+frames at all for its first three seconds, and the greeting had come and gone
+inside that window.
 
-## Two explanations, not yet separated
+So the intermittency was never in the audio: sometimes the stream is delivering
+by the time the agent speaks, sometimes it is not.
 
-1. **The greeting is never written to the room.** A caller would pick up, hear
-   silence, say something, and only then hear the agent — which is a real defect
-   and the more serious reading.
-2. **The client's audio stream does not deliver for its first few seconds.** The
-   first per-second line is `second=3`, so frames may simply not have been
-   flowing while the greeting played, and the greeting was fine.
+## What follows
 
-Telling them apart needs one of: a second subscriber joining late and listening
-for a later server-initiated turn; recording the room from LiveKit's side; or
-instrumenting the worker's playback path to log what it actually handed to the
-mixer and when.
+- **No service change.** The greeting is fine.
+- Both clients wait before speaking, which remains right, but neither can rely on
+  *hearing* the greeting end. Their fallback timer is what actually runs when
+  the stream starts late, and ticket 0004 records that.
+- A client that needs the first second of a call — a browser front end showing
+  "the agent is speaking", say — cannot assume its stream is live the moment it
+  subscribes.
 
-## Why it matters either way
+## One observation left over
 
-If it is (1), the demo's first impression is silence. If it is (2), every client
-in this repository under-reports the beginning of a call, and both the probe and
-the eval harness are waiting on a clock for a greeting they were never going to
-hear.
-
-## Reproducing
-
-```bash
-docker compose up -d
-RUST_LOG=sonari_probe=debug scripts/dev.sh cargo run --release -p probe --     evals/clips/baseline-question.wav
-```
-
-Compare `agent track level` against the same call's timeline at
-`/api/admin/call-logs/{session_id}/timeline`.
+In the silent run the caller sent nothing but noise floor from second 5 to second
+24, and `silence_force_agent_ms` is 8000, so the agent should have spoken on its
+own. The track stayed at zero throughout. Whether that timer fires at all is
+unmeasured, and would be worth a clip of its own: an evaluation set that only
+ever speaks cannot see it.
