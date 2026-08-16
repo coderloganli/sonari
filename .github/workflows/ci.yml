@@ -13,6 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # glib-sys reaches this workspace through the LiveKit SDK and needs the
+      # pkg-config metadata, which the runner image does not carry. The Docker
+      # build does not need this step: rust:bookworm already has it.
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libglib2.0-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
