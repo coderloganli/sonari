@@ -51,12 +51,13 @@ begins and when it ends.
 **One binary.** The control plane and the media plane are one process
 (ADR-0002); the split is logical.
 
-**The client in the diagram is Android in production, and a browser page in
-development.** The binary serves a single-page test client at `GET /dev`, with
-its HTML and a vendored copy of the LiveKit browser SDK compiled in
-(ADR-0018, ADR-0019). It is same-origin with the API, so there is no CORS layer
-anywhere. It walks the ordinary contract and gets no privilege: session, list
-personas, start call, join the room, end call.
+**The client in the diagram is the browser page, and today it is the only one.**
+Android is the product surface, and nothing in this repository builds it yet.
+The binary serves a single-page test client at `GET /dev`, with its HTML and a
+vendored copy of the LiveKit browser SDK compiled in (ADR-0018, ADR-0019). It is
+same-origin with the API, so there is no CORS layer anywhere. It walks the
+ordinary contract and gets no privilege: session, list personas, start call, join
+the room, end call.
 
 ---
 
@@ -166,7 +167,24 @@ rather than timestamps to subtract. Two figures are always reported together:
 - **Perceived latency** — `speech_last_voiced` → `audio_first_frame`
 
 No latency figure enters any document until it has been measured, and
-measurements come from release builds.
+measurements come from release builds. Every run records which build it came
+from, and `scripts/check-published-figures.sh` refuses a figure in a document
+that is not a figure in the newest run.
+
+Where the system stands, from
+`evals/runs-live/2026-08-15T19-28-00.118098504+00-00.json`:
+
+| | p50 | p95 |
+|---|---|---|
+| System response | 854 ms | 976 ms |
+| Perceived latency | 1553 ms | 1677 ms |
+
+The 700 ms between them is the endpointing hangover (ADR-0016), not a slow
+component. Recognition over the same run: corpus WER 4.4%, per-clip p50 0% and
+p90 18% — a tripwire at this set size rather than a measurement of quality.
+
+The run was one epoch over 15 clips and predates the build field;
+`crates/harness/OPTIMISATION-LOG.md` carries the conditions and the limits.
 
 ---
 
