@@ -14,7 +14,8 @@ use crate::{
     manifest::Sample,
     markers::Markers,
     report::{
-        BatchReport, ConfigSnapshot, PRECISION_NOTE, SampleReport, SampleStatus, Spread, Summary,
+        BUILD_PROFILE, BatchReport, ConfigSnapshot, PRECISION_NOTE, SampleReport, SampleStatus,
+        Spread, Summary,
     },
     score::wer::WordErrors,
     solver::{Outcome, Solver},
@@ -71,6 +72,7 @@ pub async fn run_batch(
     Ok(BatchReport {
         run_at: chrono::Utc::now().to_rfc3339(),
         solver: config.solver.to_owned(),
+        build: BUILD_PROFILE.to_owned(),
         epochs: config.epochs,
         note: PRECISION_NOTE.to_owned(),
         config: config.snapshot.clone(),

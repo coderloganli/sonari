@@ -55,3 +55,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: ADR index is consistent
         run: ./scripts/check-adr-index.sh
+      # No figure enters a document before it has been measured (product.md
+      # §Evidence). The run file the documents quote is in the repository, so
+      # this is checkable without credentials or a stack.
+      - name: Published figures are measured ones
+        run: ./scripts/check-published-figures.sh
