@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use character_context::{CharacterPromptContext, CharacterPromptContextReadPort};
 use serde::Serialize;
@@ -10,9 +12,15 @@ use crate::domain::{
 use crate::ports::{
     AgentCallControlPort, AgentMessageRepository, AgentSessionRepository, AgentSettingsRepository,
     Clock, CreateAgentSessionRequest, CreateAgentSessionResult, IdGenerator, LlmCompletionRequest,
-    LlmGateway, LlmProviderConfigRepository, LlmRequestMessage,
-    PartnerConversationPromptOverrideRepository, PromptTemplateRepository, UsageLogRepository,
+    LlmGateway, LlmProviderConfigRepository, LlmRequestMessage, MemoryExtractionScheduler,
+    MemoryStore, PartnerConversationPromptOverrideRepository, PromptTemplateRepository,
+    UsageLogRepository,
 };
+
+#[path = "memory.rs"]
+pub mod memory;
+
+pub use memory::{MemoryDependencies, MemoryPolicy, MemoryService, MemoryUseCases, render_facts};
 
 const DEFAULT_RECENT_TURNS: i32 = 6;
 
@@ -114,6 +122,9 @@ pub struct AgentDependencies<P, T, PP, S, M, U, G, C, I, K> {
     pub ids: I,
     pub clock: K,
     pub settings: Box<dyn AgentSettingsRepository>,
+    pub memory: Arc<dyn MemoryStore>,
+    pub extraction: Arc<dyn MemoryExtractionScheduler>,
+    pub memory_policy: MemoryPolicy,
 }
 
 pub struct AgentService<P, T, PP, S, M, U, G, C, I, K> {
@@ -128,6 +139,9 @@ pub struct AgentService<P, T, PP, S, M, U, G, C, I, K> {
     ids: I,
     clock: K,
     settings: Box<dyn AgentSettingsRepository>,
+    memory: Arc<dyn MemoryStore>,
+    extraction: Arc<dyn MemoryExtractionScheduler>,
+    memory_policy: MemoryPolicy,
 }
 
 impl<P, T, PP, S, M, U, G, C, I, K> AgentService<P, T, PP, S, M, U, G, C, I, K> {
@@ -144,6 +158,9 @@ impl<P, T, PP, S, M, U, G, C, I, K> AgentService<P, T, PP, S, M, U, G, C, I, K> 
             ids: deps.ids,
             clock: deps.clock,
             settings: deps.settings,
+            memory: deps.memory,
+            extraction: deps.extraction,
+            memory_policy: deps.memory_policy,
         }
     }
 }
@@ -225,6 +242,7 @@ where
         let mut messages = self
             .build_system_messages(&prompt_context, &session.timezone, None)
             .await?;
+        messages.extend(self.build_memory_message(&session).await);
         messages.push(LlmRequestMessage {
             role: MessageRole::User.as_str().to_owned(),
             content: user_prompt,
@@ -293,6 +311,14 @@ where
             turn_number,
         )
         .await?;
+        // ADR-0022: the turn schedules and moves on. The modulo is here, in the
+        // layer that can be tested, and only the spawning is in the adapter.
+        if self.memory_policy.enabled
+            && self.memory_policy.extract_every_turns > 0
+            && turn_number % self.memory_policy.extract_every_turns == 0
+        {
+            self.extraction.schedule(&session.id);
+        }
         Ok(ChatOutcome {
             reply_text: response.content,
             first_token_at_ms: response.first_token_at_ms,
@@ -306,7 +332,7 @@ where
 /// Callers that need audio as it is produced consume the stream directly; this
 /// is for the paths that only want the completed text, and it is where usage
 /// and tool calls are gathered.
-async fn collect_reply(
+pub(crate) async fn collect_reply(
     mut stream: crate::ports::LlmStream,
 ) -> AppResult<crate::ports::LlmCompletionResponse> {
     use futures::StreamExt;
@@ -580,6 +606,7 @@ where
         let mut messages = self
             .build_system_messages(&prompt_context, &session.timezone, None)
             .await?;
+        messages.extend(self.build_memory_message(session).await);
         messages.extend(
             self.messages
                 .list_recent(&session.id, recent_turns)
@@ -595,6 +622,34 @@ where
             content: user_message.to_owned(),
         });
         Ok(messages)
+    }
+
+    /// The one system message carrying what is known about this caller, or
+    /// nothing.
+    ///
+    /// Never fails a turn. A store that is down makes the agent forgetful, which
+    /// is a far smaller thing than a call that does not answer, so the error is
+    /// logged and the turn goes on without it.
+    async fn build_memory_message(&self, session: &AgentSession) -> Option<LlmRequestMessage> {
+        if !self.memory_policy.enabled {
+            return None;
+        }
+        let AgentCallerIdentity::PlatformUser { user_id } = session.caller;
+        let facts = match self.memory.load(user_id, session.character_id).await {
+            Ok(facts) => facts,
+            Err(error) => {
+                tracing::warn!(
+                    session_id = %session.id,
+                    %error,
+                    "could not read what is remembered; the turn continues without it"
+                );
+                return None;
+            }
+        };
+        memory::render_facts(&facts).map(|content| LlmRequestMessage {
+            role: MessageRole::System.as_str().to_owned(),
+            content,
+        })
     }
 
     async fn build_system_messages(
@@ -1064,6 +1119,9 @@ mod tests {
             ids: StubIds,
             clock: StubClock,
             settings: Box::new(StubSettings),
+            memory: Arc::new(RecordingMemory::default()),
+            extraction: Arc::new(RecordingScheduler::default()),
+            memory_policy: MemoryPolicy::default(),
         });
         let prompt_context = CharacterPromptContext {
             character: character_context::CharacterPromptProfile {
@@ -1115,6 +1173,9 @@ mod tests {
             ids: StubIds,
             clock: StubClock,
             settings: Box::new(StubSettings),
+            memory: Arc::new(RecordingMemory::default()),
+            extraction: Arc::new(RecordingScheduler::default()),
+            memory_policy: MemoryPolicy::default(),
         });
 
         let result = service
@@ -1127,5 +1188,668 @@ mod tests {
             .await;
 
         assert!(result.is_err());
+    }
+    // ---- Long-term memory -------------------------------------------------
+    //
+    // Test cases 1-10 of task.md. The fakes below record what they were asked
+    // for, because most of what matters here is a question asked of the store or
+    // the scheduler, not a value returned to the caller.
+
+    use crate::domain::{MemoryCategory, MemoryFact};
+    use crate::ports::{MemoryExtractionScheduler, MemoryStore};
+    use std::sync::Mutex;
+
+    /// A store holding a fixed set, remembering every key it was asked for.
+    #[derive(Default)]
+    struct RecordingMemory {
+        facts: Vec<MemoryFact>,
+        asked: Mutex<Vec<(i64, i64)>>,
+    }
+
+    impl RecordingMemory {
+        fn holding(facts: Vec<MemoryFact>) -> Self {
+            Self {
+                facts,
+                asked: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl MemoryStore for RecordingMemory {
+        async fn load(&self, user_id: i64, character_id: i64) -> AppResult<Vec<MemoryFact>> {
+            self.asked.lock().unwrap().push((user_id, character_id));
+            Ok(self
+                .facts
+                .iter()
+                .filter(|fact| fact.user_id == user_id && fact.character_id == character_id)
+                .cloned()
+                .collect())
+        }
+        async fn load_all(&self, _user_id: i64) -> AppResult<Vec<MemoryFact>> {
+            Ok(self.facts.clone())
+        }
+        async fn replace(
+            &self,
+            _user_id: i64,
+            _character_id: i64,
+            _source_session_id: &str,
+            _facts: &[crate::domain::ExtractedFact],
+        ) -> AppResult<()> {
+            Ok(())
+        }
+        async fn delete(&self, _user_id: i64, _character_id: Option<i64>) -> AppResult<u64> {
+            Ok(0)
+        }
+    }
+
+    /// A store that is down.
+    #[derive(Default)]
+    struct BrokenMemory;
+
+    #[async_trait]
+    impl MemoryStore for BrokenMemory {
+        async fn load(&self, _user_id: i64, _character_id: i64) -> AppResult<Vec<MemoryFact>> {
+            Err(AppError::internal("memory is unavailable"))
+        }
+        async fn load_all(&self, _user_id: i64) -> AppResult<Vec<MemoryFact>> {
+            Err(AppError::internal("memory is unavailable"))
+        }
+        async fn replace(
+            &self,
+            _user_id: i64,
+            _character_id: i64,
+            _source_session_id: &str,
+            _facts: &[crate::domain::ExtractedFact],
+        ) -> AppResult<()> {
+            Err(AppError::internal("memory is unavailable"))
+        }
+        async fn delete(&self, _user_id: i64, _character_id: Option<i64>) -> AppResult<u64> {
+            Err(AppError::internal("memory is unavailable"))
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingScheduler {
+        scheduled: Mutex<Vec<String>>,
+    }
+
+    impl MemoryExtractionScheduler for RecordingScheduler {
+        fn schedule(&self, session_id: &str) {
+            self.scheduled.lock().unwrap().push(session_id.to_owned());
+        }
+    }
+
+    /// Captures the messages the model was sent, which is where injection is
+    /// visible. The reply is fixed: what it says is not what these tests are
+    /// about.
+    #[derive(Default)]
+    struct CapturingGateway {
+        requests: Mutex<Vec<LlmCompletionRequest>>,
+    }
+
+    #[async_trait]
+    impl LlmGateway for CapturingGateway {
+        async fn stream(
+            &self,
+            request: LlmCompletionRequest,
+        ) -> AppResult<crate::ports::LlmStream> {
+            use crate::ports::{LlmDelta, LlmUsage};
+            self.requests.lock().unwrap().push(request);
+            Ok(Box::pin(futures::stream::iter(vec![
+                Ok(LlmDelta::Token("mm.".into())),
+                Ok(LlmDelta::Done(LlmUsage::default())),
+            ])))
+        }
+    }
+
+    /// Lets the test hold the gateway it handed to the service. `LlmGateway` has
+    /// no blanket impl for `Arc`, and giving it one would apply to the whole
+    /// crate for the sake of a test.
+    struct SharedGateway(Arc<CapturingGateway>);
+
+    #[async_trait]
+    impl LlmGateway for SharedGateway {
+        async fn stream(
+            &self,
+            request: LlmCompletionRequest,
+        ) -> AppResult<crate::ports::LlmStream> {
+            self.0.stream(request).await
+        }
+    }
+
+    /// The session every memory test runs against: caller 7, persona 11.
+    #[derive(Default)]
+    struct SessionFor7And11;
+
+    #[async_trait]
+    impl AgentSessionRepository for SessionFor7And11 {
+        async fn create(&self, session: &AgentSession) -> AppResult<AgentSession> {
+            Ok(session.clone())
+        }
+        async fn get_by_id(&self, session_id: &str) -> AppResult<Option<AgentSession>> {
+            Ok(Some(AgentSession {
+                id: session_id.to_owned(),
+                caller: AgentCallerIdentity::PlatformUser { user_id: 7 },
+                character_id: 11,
+                timezone: "UTC".into(),
+                scene_id: None,
+                started_at: chrono::Utc::now(),
+                ended_at: None,
+            }))
+        }
+        async fn end(&self, _session_id: &str) -> AppResult<()> {
+            Ok(())
+        }
+    }
+
+    /// Two turns of history, so the memory message has something to sit before.
+    #[derive(Default)]
+    struct MessagesWithHistory {
+        next_turn: i32,
+    }
+
+    #[async_trait]
+    impl AgentMessageRepository for MessagesWithHistory {
+        async fn append(&self, message: &AgentMessage) -> AppResult<AgentMessage> {
+            Ok(message.clone())
+        }
+        async fn list_recent(
+            &self,
+            session_id: &str,
+            _recent_turns: i32,
+        ) -> AppResult<Vec<AgentMessage>> {
+            Ok(vec![AgentMessage {
+                id: 1,
+                session_id: session_id.to_owned(),
+                role: MessageRole::User,
+                content: "an earlier thing the caller said".into(),
+                turn_number: 1,
+                created_at: chrono::Utc::now(),
+            }])
+        }
+        async fn list_all(&self, _session_id: &str) -> AppResult<Vec<AgentMessage>> {
+            Ok(Vec::new())
+        }
+        async fn next_turn_number(&self, _session_id: &str) -> AppResult<i32> {
+            Ok(self.next_turn)
+        }
+    }
+
+    fn fact(
+        user_id: i64,
+        character_id: i64,
+        category: MemoryCategory,
+        content: &str,
+    ) -> MemoryFact {
+        MemoryFact {
+            user_id,
+            character_id,
+            category,
+            content: content.to_owned(),
+            first_seen_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            source_session_id: "earlier-session".into(),
+        }
+    }
+
+    fn three_facts() -> Vec<MemoryFact> {
+        vec![
+            fact(7, 11, MemoryCategory::Identity, "The caller is called Ada."),
+            fact(
+                7,
+                11,
+                MemoryCategory::Relationship,
+                "The caller has a cat called Coal.",
+            ),
+            fact(
+                7,
+                11,
+                MemoryCategory::Commitment,
+                "The agent said it would ask how the interview went.",
+            ),
+        ]
+    }
+
+    struct MemoryHarness {
+        service: AgentService<
+            StubProviders,
+            StubTemplates,
+            StubPartnerPromptOverrides,
+            SessionFor7And11,
+            MessagesWithHistory,
+            StubUsage,
+            SharedGateway,
+            StubCharacters,
+            StubIds,
+            StubClock,
+        >,
+        gateway: Arc<CapturingGateway>,
+        scheduler: Arc<RecordingScheduler>,
+    }
+
+    fn harness_with(
+        memory: Arc<dyn MemoryStore>,
+        policy: MemoryPolicy,
+        next_turn: i32,
+    ) -> MemoryHarness {
+        let scheduler = Arc::new(RecordingScheduler::default());
+        harness_from(memory, policy, next_turn, scheduler.clone(), scheduler)
+    }
+
+    /// The same, with the scheduler chosen by the caller — case 18 needs one
+    /// that really runs the extraction. The recording scheduler still exists so
+    /// the harness has one to hold; nothing asserts on it in that case.
+    fn harness_with_scheduler(
+        memory: Arc<dyn MemoryStore>,
+        policy: MemoryPolicy,
+        next_turn: i32,
+        extraction: Arc<dyn MemoryExtractionScheduler>,
+    ) -> MemoryHarness {
+        harness_from(
+            memory,
+            policy,
+            next_turn,
+            extraction,
+            Arc::new(RecordingScheduler::default()),
+        )
+    }
+
+    fn harness_from(
+        memory: Arc<dyn MemoryStore>,
+        policy: MemoryPolicy,
+        next_turn: i32,
+        extraction: Arc<dyn MemoryExtractionScheduler>,
+        scheduler: Arc<RecordingScheduler>,
+    ) -> MemoryHarness {
+        let gateway = Arc::new(CapturingGateway::default());
+        let service = AgentService::new(AgentDependencies {
+            providers: StubProviders,
+            templates: StubTemplates,
+            partner_prompt_overrides: StubPartnerPromptOverrides,
+            sessions: SessionFor7And11,
+            messages: MessagesWithHistory { next_turn },
+            usage_logs: StubUsage,
+            gateway: SharedGateway(gateway.clone()),
+            characters: StubCharacters,
+            ids: StubIds,
+            clock: StubClock,
+            settings: Box::new(StubSettings),
+            memory,
+            extraction,
+            memory_policy: policy,
+        });
+        MemoryHarness {
+            service,
+            gateway,
+            scheduler,
+        }
+    }
+
+    impl MemoryHarness {
+        /// `chat_once` is on two traits the service implements, so a bare method
+        /// call is ambiguous. Naming the trait once here keeps every test
+        /// reading as a turn rather than as a disambiguation.
+        async fn turn_in(&self, session_id: &str, message: &str) -> AppResult<ChatOutcome> {
+            AgentUseCases::chat_once(
+                &self.service,
+                ChatCommand {
+                    session_id: session_id.to_owned(),
+                    user_message: message.to_owned(),
+                },
+            )
+            .await
+        }
+
+        async fn turn(&self, message: &str) -> AppResult<ChatOutcome> {
+            self.turn_in("session-1", message).await
+        }
+
+        async fn welcome(&self) -> AppResult<String> {
+            AgentUseCases::generate_welcome_message(&self.service, "session-1").await
+        }
+    }
+
+    fn enabled_policy() -> MemoryPolicy {
+        MemoryPolicy {
+            enabled: true,
+            extract_every_turns: 4,
+            max_facts: 40,
+            max_facts_per_category: 12,
+        }
+    }
+
+    /// The messages the model was actually sent on the only call made.
+    fn sent_messages(gateway: &CapturingGateway) -> Vec<LlmRequestMessage> {
+        let requests = gateway.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1, "expected exactly one model call");
+        requests[0].messages.clone()
+    }
+
+    fn memory_message(messages: &[LlmRequestMessage]) -> Option<(usize, String)> {
+        messages.iter().enumerate().find_map(|(index, message)| {
+            (message.role == MessageRole::System.as_str() && message.content.contains("Coal"))
+                .then(|| (index, message.content.clone()))
+        })
+    }
+
+    /// Test case 1 — a non-empty fact set renders.
+    #[test]
+    fn a_non_empty_fact_set_renders() {
+        let rendered = render_facts(&three_facts()).expect("a non-empty set renders");
+
+        assert!(rendered.contains("The caller is called Ada."));
+        assert!(rendered.contains("The caller has a cat called Coal."));
+        assert!(rendered.contains("The agent said it would ask how the interview went."));
+        let identity = rendered.find("identity").expect("identity heading");
+        let relationship = rendered.find("relationship").expect("relationship heading");
+        let commitment = rendered.find("commitment").expect("commitment heading");
+        assert!(
+            identity < relationship && relationship < commitment,
+            "categories render in the order MemoryCategory::ALL declares"
+        );
+    }
+
+    /// Test case 2 — an empty fact set renders to nothing, and the prompt is
+    /// exactly what it was before memory existed.
+    #[tokio::test]
+    async fn an_empty_fact_set_renders_to_nothing() {
+        assert_eq!(render_facts(&[]), None);
+
+        let harness = harness_with(Arc::new(RecordingMemory::default()), enabled_policy(), 1);
+        harness.turn("hello").await.expect("the turn succeeds");
+
+        let messages = sent_messages(&harness.gateway);
+        assert_eq!(
+            messages.iter().filter(|m| m.role == "system").count(),
+            3,
+            "the three persona system messages and nothing else"
+        );
+    }
+
+    /// Test case 3 — the memory message sits after the persona and before the
+    /// history.
+    #[tokio::test]
+    async fn the_memory_message_sits_between_the_persona_and_the_history() {
+        let harness = harness_with(
+            Arc::new(RecordingMemory::holding(three_facts())),
+            enabled_policy(),
+            1,
+        );
+        harness.turn("hello").await.expect("the turn succeeds");
+
+        let messages = sent_messages(&harness.gateway);
+        let (index, _) = memory_message(&messages).expect("the memory message is sent");
+        assert_eq!(index, 3, "after the three persona system messages");
+        let first_history = messages
+            .iter()
+            .position(|m| m.content == "an earlier thing the caller said")
+            .expect("the history is sent");
+        assert!(index < first_history, "and before the history");
+    }
+
+    /// Test case 4 — a memory read failure does not fail the turn.
+    #[tokio::test]
+    async fn a_memory_read_failure_does_not_fail_the_turn() {
+        let harness = harness_with(Arc::new(BrokenMemory), enabled_policy(), 1);
+
+        let outcome = harness
+            .turn("hello")
+            .await
+            .expect("a broken store does not fail the call");
+
+        assert_eq!(outcome.reply_text, "mm.");
+        assert!(memory_message(&sent_messages(&harness.gateway)).is_none());
+    }
+
+    /// Test case 5 — the welcome message carries the facts.
+    #[tokio::test]
+    async fn the_welcome_message_carries_the_facts() {
+        let harness = harness_with(
+            Arc::new(RecordingMemory::holding(three_facts())),
+            enabled_policy(),
+            1,
+        );
+
+        harness
+            .welcome()
+            .await
+            .expect("the welcome message is produced");
+
+        assert!(memory_message(&sent_messages(&harness.gateway)).is_some());
+    }
+
+    /// Test case 6 — the set is read for this caller and this persona.
+    #[tokio::test]
+    async fn the_set_is_read_for_this_caller_and_this_persona() {
+        let store = Arc::new(RecordingMemory::holding(three_facts()));
+        let harness = harness_with(store.clone(), enabled_policy(), 1);
+
+        harness.turn("hello").await.expect("the turn succeeds");
+
+        assert_eq!(store.asked.lock().unwrap().as_slice(), [(7, 11)]);
+    }
+
+    /// Test case 7 — another persona sees nothing.
+    #[tokio::test]
+    async fn another_persona_sees_nothing() {
+        let facts = vec![fact(
+            7,
+            12,
+            MemoryCategory::Relationship,
+            "The caller has a cat called Coal.",
+        )];
+        let harness = harness_with(
+            Arc::new(RecordingMemory::holding(facts)),
+            enabled_policy(),
+            1,
+        );
+
+        harness.turn("hello").await.expect("the turn succeeds");
+
+        assert!(memory_message(&sent_messages(&harness.gateway)).is_none());
+    }
+
+    /// Test case 8 — extraction is scheduled on the Nth turn.
+    #[tokio::test]
+    async fn extraction_is_scheduled_on_the_nth_turn() {
+        let harness = harness_with(Arc::new(RecordingMemory::default()), enabled_policy(), 4);
+
+        harness.turn("hello").await.expect("the turn succeeds");
+
+        assert_eq!(
+            harness.scheduler.scheduled.lock().unwrap().as_slice(),
+            ["session-1".to_owned()]
+        );
+    }
+
+    /// Test case 9 — it is not scheduled on other turns.
+    #[tokio::test]
+    async fn extraction_is_not_scheduled_on_other_turns() {
+        for turn in [1, 2, 3, 5] {
+            let harness =
+                harness_with(Arc::new(RecordingMemory::default()), enabled_policy(), turn);
+
+            harness.turn("hello").await.expect("the turn succeeds");
+
+            assert!(
+                harness.scheduler.scheduled.lock().unwrap().is_empty(),
+                "turn {turn} scheduled an extraction"
+            );
+        }
+    }
+
+    /// Test case 10 — disabled means never.
+    #[tokio::test]
+    async fn disabled_memory_never_schedules() {
+        let policy = MemoryPolicy {
+            enabled: false,
+            ..enabled_policy()
+        };
+        let harness = harness_with(Arc::new(RecordingMemory::default()), policy, 4);
+
+        harness.turn("hello").await.expect("the turn succeeds");
+
+        assert!(harness.scheduler.scheduled.lock().unwrap().is_empty());
+    }
+
+    /// A store that actually keeps what it is given, so extraction and injection
+    /// can be run against the same one.
+    #[derive(Default)]
+    struct InMemoryStore {
+        facts: Mutex<Vec<MemoryFact>>,
+    }
+
+    #[async_trait]
+    impl MemoryStore for InMemoryStore {
+        async fn load(&self, user_id: i64, character_id: i64) -> AppResult<Vec<MemoryFact>> {
+            Ok(self
+                .facts
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|fact| fact.user_id == user_id && fact.character_id == character_id)
+                .cloned()
+                .collect())
+        }
+        async fn load_all(&self, user_id: i64) -> AppResult<Vec<MemoryFact>> {
+            Ok(self
+                .facts
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|fact| fact.user_id == user_id)
+                .cloned()
+                .collect())
+        }
+        async fn replace(
+            &self,
+            user_id: i64,
+            character_id: i64,
+            source_session_id: &str,
+            facts: &[crate::domain::ExtractedFact],
+        ) -> AppResult<()> {
+            let mut held = self.facts.lock().unwrap();
+            held.retain(|fact| !(fact.user_id == user_id && fact.character_id == character_id));
+            let now = chrono::Utc::now();
+            held.extend(facts.iter().map(|fact| MemoryFact {
+                user_id,
+                character_id,
+                category: fact.category,
+                content: fact.content.clone(),
+                first_seen_at: now,
+                updated_at: now,
+                source_session_id: source_session_id.to_owned(),
+            }));
+            Ok(())
+        }
+        async fn delete(&self, user_id: i64, character_id: Option<i64>) -> AppResult<u64> {
+            let mut held = self.facts.lock().unwrap();
+            let before = held.len();
+            held.retain(|fact| {
+                !(fact.user_id == user_id
+                    && character_id
+                        .map(|id| fact.character_id == id)
+                        .unwrap_or(true))
+            });
+            Ok((before - held.len()) as u64)
+        }
+    }
+
+    /// Test case 18 — a fact survives the call.
+    ///
+    /// Driven through the turn path rather than by calling extraction directly:
+    /// session A is an ordinary turn, and everything after it — the scheduling
+    /// decision, the scheduler spawning, the extraction, the write — happens the
+    /// way it happens in a call. Session B is a second session for the same
+    /// caller and persona. Asserted on the request the gateway received, because
+    /// what the model replies is whatever the fake was told to say, so the reply
+    /// proves nothing and the prompt proves everything.
+    #[tokio::test]
+    async fn a_fact_survives_the_call() {
+        let store = Arc::new(InMemoryStore::default());
+        let extraction = Arc::new(MemoryService::new(MemoryDependencies {
+            memory: store.clone(),
+            sessions: Arc::new(SessionFor7And11),
+            messages: Arc::new(MessagesWithHistory { next_turn: 4 }),
+            providers: Arc::new(StubProviders),
+            templates: Arc::new(StubTemplates),
+            gateway: Arc::new(FactExtractingGateway),
+            clock: Arc::new(StubClock),
+            policy: enabled_policy(),
+        }));
+        let scheduler = Arc::new(SpawningTestScheduler::new(extraction));
+
+        // Session A: a turn, on the turn the policy says to extract.
+        let session_a =
+            harness_with_scheduler(store.clone(), enabled_policy(), 4, scheduler.clone());
+        session_a
+            .turn_in("session-a", "I have a cat called Coal")
+            .await
+            .expect("the turn succeeds");
+        scheduler.settle().await;
+
+        // Session B: an entirely new session for the same caller and persona.
+        let session_b = harness_with(store.clone(), enabled_policy(), 1);
+        session_b
+            .turn_in("session-b", "how have you been")
+            .await
+            .expect("the turn succeeds");
+
+        let (_, content) = memory_message(&sent_messages(&session_b.gateway))
+            .expect("what session A learned reaches session B's prompt");
+        assert!(content.contains("Coal"));
+    }
+
+    /// Spawns like the composition root's scheduler does, and hands the test a
+    /// way to wait for what it spawned. A test that did the extraction itself
+    /// would pass even if the turn path never scheduled anything.
+    struct SpawningTestScheduler {
+        memory: Arc<MemoryService>,
+        spawned: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    }
+
+    impl SpawningTestScheduler {
+        fn new(memory: Arc<MemoryService>) -> Self {
+            Self {
+                memory,
+                spawned: Mutex::new(Vec::new()),
+            }
+        }
+
+        async fn settle(&self) {
+            let handles: Vec<_> = self.spawned.lock().unwrap().drain(..).collect();
+            for handle in handles {
+                handle.await.expect("the extraction task finished");
+            }
+        }
+    }
+
+    impl MemoryExtractionScheduler for SpawningTestScheduler {
+        fn schedule(&self, session_id: &str) {
+            let memory = self.memory.clone();
+            let session_id = session_id.to_owned();
+            self.spawned.lock().unwrap().push(tokio::spawn(async move {
+                memory.extract(&session_id).await
+            }));
+        }
+    }
+
+    /// Returns the one fact session A is supposed to learn.
+    struct FactExtractingGateway;
+
+    #[async_trait]
+    impl LlmGateway for FactExtractingGateway {
+        async fn stream(
+            &self,
+            _request: LlmCompletionRequest,
+        ) -> AppResult<crate::ports::LlmStream> {
+            use crate::ports::{LlmDelta, LlmUsage};
+            let reply = r#"{"facts":[{"category":"relationship","content":"The caller has a cat called Coal."}]}"#;
+            Ok(Box::pin(futures::stream::iter(vec![
+                Ok(LlmDelta::Token(reply.into())),
+                Ok(LlmDelta::Done(LlmUsage::default())),
+            ])))
+        }
     }
 }

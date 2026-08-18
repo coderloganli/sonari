@@ -2,9 +2,10 @@ use crate::{
     AgentArchiveMessage, AgentCallerIdentity, AgentMessage, AgentMessageArchive, AgentSession,
     LlmUsageLog, LlmUsageStats, MessageRole, PartnerConversationPromptOverride, PromptTemplate,
     PromptTemplateKey, ProviderKey, SessionUsageSummary,
+    domain::{ExtractedFact, MemoryCategory, MemoryFact},
     ports::{
         AgentArchiveRepository, AgentMessageRepository, AgentSessionRepository,
-        AgentSettingsRepository, PartnerConversationPromptOverrideRepository,
+        AgentSettingsRepository, MemoryStore, PartnerConversationPromptOverrideRepository,
         PromptTemplateRepository, UsageLogRepository,
     },
 };
@@ -53,6 +54,12 @@ pub struct PostgresAgentSettingsRepository {
     pool: PgPool,
 }
 
+/// Where a caller's facts live (ADR-0021). Sets in, sets out.
+#[derive(Debug, Clone)]
+pub struct PostgresMemoryStore {
+    pool: PgPool,
+}
+
 macro_rules! repo_new {
     ($name:ident) => {
         impl $name {
@@ -70,6 +77,7 @@ repo_new!(PostgresAgentMessageRepository);
 repo_new!(PostgresAgentArchiveRepository);
 repo_new!(PostgresAgentUsageLogRepository);
 repo_new!(PostgresAgentSettingsRepository);
+repo_new!(PostgresMemoryStore);
 
 fn map_sqlx_error(err: sqlx::Error) -> AppError {
     // 这里把 sqlx 错误收敛为 shared-kernel 统一错误模型。
@@ -527,5 +535,238 @@ impl AgentSettingsRepository for PostgresAgentSettingsRepository {
         .await
         .map_err(map_sqlx_error)?;
         Ok(())
+    }
+}
+
+/// Reads one row. A category the database holds but the code does not know is
+/// treated as a corrupt row rather than guessed at; the check constraint means
+/// it cannot happen without a migration going wrong.
+fn memory_fact_from_row(row: &sqlx::postgres::PgRow) -> AppResult<MemoryFact> {
+    let raw: String = row.get("category");
+    let category = MemoryCategory::parse(&raw)
+        .ok_or_else(|| AppError::internal(format!("unknown memory category: {raw}")))?;
+    Ok(MemoryFact {
+        user_id: row.get("user_id"),
+        character_id: row.get("character_id"),
+        category,
+        content: row.get("content"),
+        first_seen_at: row.get("first_seen_at"),
+        updated_at: row.get("updated_at"),
+        source_session_id: row.get("source_session_id"),
+    })
+}
+
+#[async_trait]
+impl MemoryStore for PostgresMemoryStore {
+    async fn load(&self, user_id: i64, character_id: i64) -> AppResult<Vec<MemoryFact>> {
+        // Ordered so the injected text is the same from one turn to the next:
+        // an ordering the database picks would reshuffle the prompt for no
+        // reason.
+        let rows = sqlx::query(
+            "select user_id, character_id, category, content, first_seen_at, updated_at, source_session_id              from agent_memory_facts where user_id = $1 and character_id = $2              order by first_seen_at, id",
+        )
+        .bind(user_id)
+        .bind(character_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        rows.iter().map(memory_fact_from_row).collect()
+    }
+
+    async fn load_all(&self, user_id: i64) -> AppResult<Vec<MemoryFact>> {
+        let rows = sqlx::query(
+            "select user_id, character_id, category, content, first_seen_at, updated_at, source_session_id              from agent_memory_facts where user_id = $1 order by character_id, first_seen_at, id",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        rows.iter().map(memory_fact_from_row).collect()
+    }
+
+    async fn replace(
+        &self,
+        user_id: i64,
+        character_id: i64,
+        source_session_id: &str,
+        facts: &[ExtractedFact],
+    ) -> AppResult<()> {
+        // One transaction, because a half-applied set is a set nobody asked for:
+        // the caller would be remembered as someone they partly are.
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
+        let contents: Vec<String> = facts.iter().map(|fact| fact.content.clone()).collect();
+
+        sqlx::query(
+            "delete from agent_memory_facts              where user_id = $1 and character_id = $2 and content <> all($3)",
+        )
+        .bind(user_id)
+        .bind(character_id)
+        .bind(&contents)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        for fact in facts {
+            // A fact still true keeps when it was first learned; only the
+            // confirmation is new. The unique constraint is what makes this one
+            // statement instead of a read and a branch.
+            sqlx::query(
+                "insert into agent_memory_facts                  (user_id, character_id, category, content, first_seen_at, updated_at, source_session_id)                  values ($1, $2, $3, $4, now(), now(), $5)                  on conflict (user_id, character_id, content) do update set                  category = excluded.category,                  updated_at = excluded.updated_at,                  source_session_id = excluded.source_session_id",
+            )
+            .bind(user_id)
+            .bind(character_id)
+            .bind(fact.category.as_str())
+            .bind(&fact.content)
+            .bind(source_session_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        }
+
+        tx.commit().await.map_err(map_sqlx_error)
+    }
+
+    async fn delete(&self, user_id: i64, character_id: Option<i64>) -> AppResult<u64> {
+        let result = match character_id {
+            Some(character_id) => {
+                sqlx::query(
+                    "delete from agent_memory_facts where user_id = $1 and character_id = $2",
+                )
+                .bind(user_id)
+                .bind(character_id)
+                .execute(&self.pool)
+                .await
+            }
+            None => {
+                sqlx::query("delete from agent_memory_facts where user_id = $1")
+                    .bind(user_id)
+                    .execute(&self.pool)
+                    .await
+            }
+        };
+        Ok(result.map_err(map_sqlx_error)?.rows_affected())
+    }
+}
+
+#[cfg(test)]
+mod memory_store_tests {
+    //! Test case 26 of task.md — the reconcile SQL.
+    //!
+    //! Skips itself without `DATABASE_DSN`, as the harness tests that need
+    //! credentials do. Everything else about memory runs against fakes; this is
+    //! the one thing a fake cannot check, because the behaviour under test is
+    //! three statements in one transaction.
+
+    use super::*;
+    use crate::domain::MemoryCategory;
+
+    async fn pool_or_skip() -> Option<PgPool> {
+        let dsn = std::env::var("DATABASE_DSN").ok()?;
+        match PgPool::connect(&dsn).await {
+            Ok(pool) => Some(pool),
+            Err(error) => {
+                eprintln!("skipping: cannot reach the database: {error}");
+                None
+            }
+        }
+    }
+
+    fn extracted(category: MemoryCategory, content: &str) -> ExtractedFact {
+        ExtractedFact {
+            category,
+            content: content.to_owned(),
+        }
+    }
+
+    /// Test case 26 — `replace` preserves, inserts and deletes.
+    #[tokio::test]
+    async fn replace_preserves_inserts_and_deletes() {
+        let Some(pool) = pool_or_skip().await else {
+            return;
+        };
+        let store = PostgresMemoryStore::new(pool);
+        // A user id no call would produce, so a run cannot disturb real rows.
+        let user_id = -4242;
+        let character_id = 11;
+        store
+            .delete(user_id, None)
+            .await
+            .expect("clear anything left by an earlier run");
+
+        store
+            .replace(
+                user_id,
+                character_id,
+                "session-a",
+                &[
+                    extracted(MemoryCategory::Identity, "The caller is called Ada."),
+                    extracted(MemoryCategory::Situation, "The caller is job hunting."),
+                    extracted(
+                        MemoryCategory::Preference,
+                        "The caller dislikes small talk.",
+                    ),
+                ],
+            )
+            .await
+            .expect("write the first set");
+        let first = store
+            .load(user_id, character_id)
+            .await
+            .expect("read the first set");
+        assert_eq!(first.len(), 3);
+        let kept_before = first
+            .iter()
+            .find(|fact| fact.content == "The caller is called Ada.")
+            .expect("the kept fact")
+            .clone();
+
+        store
+            .replace(
+                user_id,
+                character_id,
+                "session-b",
+                &[
+                    extracted(MemoryCategory::Identity, "The caller is called Ada."),
+                    extracted(MemoryCategory::Situation, "The caller starts on Monday."),
+                ],
+            )
+            .await
+            .expect("write the replacement set");
+        let second = store
+            .load(user_id, character_id)
+            .await
+            .expect("read the replacement set");
+
+        assert_eq!(second.len(), 2, "the absent fact is deleted");
+        let kept_after = second
+            .iter()
+            .find(|fact| fact.content == "The caller is called Ada.")
+            .expect("the kept fact survives");
+        assert_eq!(
+            kept_after.first_seen_at, kept_before.first_seen_at,
+            "a fact that is still true keeps when it was first learned"
+        );
+        assert!(
+            kept_after.updated_at >= kept_before.updated_at,
+            "and is confirmed again"
+        );
+        assert_eq!(kept_after.source_session_id, "session-b");
+        assert!(
+            second
+                .iter()
+                .any(|fact| fact.content == "The caller starts on Monday."),
+            "the new fact is inserted"
+        );
+        assert!(
+            !second
+                .iter()
+                .any(|fact| fact.content == "The caller is job hunting."),
+            "the superseded fact is gone"
+        );
+
+        store
+            .delete(user_id, None)
+            .await
+            .expect("leave nothing behind");
     }
 }

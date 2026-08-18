@@ -32,8 +32,7 @@ impl ConfigPromptTemplates {
             PromptTemplateKey::ConversationSystem2 => &prompts.character,
             PromptTemplateKey::ConversationSystem3 => &prompts.scene,
             PromptTemplateKey::ConversationWelcomeUser => &prompts.welcome,
-            // Only the conversation path is served; nothing else calls this.
-            PromptTemplateKey::AssistantSystem => return None,
+            PromptTemplateKey::MemoryExtraction => &prompts.memory_extraction,
         };
         Some(text.clone())
     }

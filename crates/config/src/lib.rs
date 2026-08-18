@@ -105,6 +105,61 @@ pub struct Settings {
     /// When a turn starts and when it ends.
     #[serde(default)]
     pub endpointing: EndpointingSettings,
+    /// What the agent remembers about a caller between calls.
+    #[serde(default)]
+    pub memory: MemorySettings,
+}
+
+/// Long-term memory (ADR-0021, ADR-0022).
+///
+/// `sonari.toml.example` switches this on, because a clean clone should show
+/// what the system does. The *absence* of the section leaves it off, which is a
+/// different question: a configuration file written before memory existed should
+/// not silently start extracting and sending notes to the model provider.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemorySettings {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Completed turns between extractions.
+    #[serde(default = "default_extract_every_turns")]
+    pub extract_every_turns: i32,
+    /// The most facts one caller may have with one persona. This is what bounds
+    /// how long the prompt gets.
+    #[serde(default = "default_max_facts")]
+    pub max_facts: usize,
+    /// Per category, so a talkative week of passing news cannot evict the
+    /// caller's name.
+    #[serde(default = "default_max_facts_per_category")]
+    pub max_facts_per_category: usize,
+    /// Which model does the extracting. Empty means the conversation model.
+    /// A cheaper one is usually right: this is extraction, not conversation.
+    #[serde(default)]
+    pub model: String,
+}
+
+fn default_extract_every_turns() -> i32 {
+    4
+}
+
+fn default_max_facts() -> usize {
+    40
+}
+
+fn default_max_facts_per_category() -> usize {
+    12
+}
+
+impl Default for MemorySettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            extract_every_turns: default_extract_every_turns(),
+            max_facts: default_max_facts(),
+            max_facts_per_category: default_max_facts_per_category(),
+            model: String::new(),
+        }
+    }
 }
 
 /// Decides the boundaries of a turn from the voice activity signal.
@@ -193,6 +248,10 @@ pub struct PromptTemplates {
     /// The opening line of a call the agent starts.
     #[serde(default)]
     pub welcome: String,
+    /// How the model is asked to turn a conversation into facts. Carries
+    /// `{{max_facts}}`, `{{max_facts_per_category}}` and `{{categories}}`.
+    #[serde(default)]
+    pub memory_extraction: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -274,6 +333,37 @@ impl Settings {
         }
         Ok(())
     }
+
+    /// Refused at startup rather than discovered mid-call: a zero interval would
+    /// extract on every turn, and a zero cap would remember nothing while
+    /// spending a model call finding out.
+    fn validate_memory(&self) -> Result<()> {
+        if !self.memory.enabled {
+            return Ok(());
+        }
+        if self.memory.extract_every_turns < 1 {
+            bail!("memory.extract_every_turns must be at least 1");
+        }
+        if self.memory.max_facts < 1 {
+            bail!("memory.max_facts must be at least 1");
+        }
+        if self.memory.max_facts_per_category < 1 {
+            bail!("memory.max_facts_per_category must be at least 1");
+        }
+        if self.memory.max_facts_per_category > self.memory.max_facts {
+            bail!(
+                "memory.max_facts_per_category ({}) cannot exceed memory.max_facts ({})",
+                self.memory.max_facts_per_category,
+                self.memory.max_facts
+            );
+        }
+        // Without it the extraction asks for nothing in particular and stores
+        // whatever comes back, which is worse than being switched off.
+        if self.prompts.memory_extraction.trim().is_empty() {
+            bail!("prompts.memory_extraction must be set when memory is enabled");
+        }
+        Ok(())
+    }
 }
 
 fn read(path: &Path) -> Result<Settings> {
@@ -283,6 +373,7 @@ fn read(path: &Path) -> Result<Settings> {
         toml::from_str(&raw).with_context(|| format!("failed to parse {}", path.display()))?;
     settings.validate()?;
     settings.validate_personas()?;
+    settings.validate_memory()?;
     Ok(settings)
 }
 
@@ -327,6 +418,7 @@ pub fn load_and_watch(path: &Path) -> Result<SettingsHandle> {
             llm: LlmSettings::default(),
             prompts: PromptTemplates::default(),
             endpointing: EndpointingSettings::default(),
+            memory: MemorySettings::default(),
         }
     };
 
