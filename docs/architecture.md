@@ -164,6 +164,9 @@ one natural-language sentence, keyed on `(user_id, character_id)`. It is injecte
 whole, so nothing searches it. The pgvector image stays for episodic memory,
 which is a later task; no column uses it today.
 
+The subsystem — the kinds of memory, how extraction and injection work, and the
+options that were rejected — is [memory.md](memory.md).
+
 ---
 
 ## 7. Observability
