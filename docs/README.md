@@ -6,7 +6,11 @@
 |---|---|---|
 | [product.md](product.md) | **What it is for.** Scope, requirements, what is deliberately absent | You are deciding whether a change belongs |
 | [architecture.md](architecture.md) | **How the system is built.** Components, domain model, interfaces, state machine, concurrency, failure handling | You are writing code and need to know where it goes |
+| [memory.md](memory.md) | **What the agent remembers.** The kinds of memory, how semantic memory works, and every decision point with the options not taken | You are changing memory, or asking why it is shaped this way |
 | [adr/](adr/) | **Why it is built that way.** One decision per record, with the alternatives that were rejected | You disagree with something, or you are about to change it |
+
+`memory.md` is the one subsystem document. It exists because memory has more
+rejected options than decided ones, and an ADR records only what was chosen.
 
 The split is deliberate. `architecture.md` describes the system as it stands and stays current. ADRs are dated snapshots of reasoning and are **never edited after acceptance** — when a decision changes, a new ADR supersedes the old one and the old one stays on disk.
 

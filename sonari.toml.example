@@ -87,6 +87,57 @@ welcome = '''
 Open the call with a single short greeting, under ten words.
 '''
 
+# How a conversation becomes facts. Only used when [memory] is enabled.
+#
+# The reply is parsed, so the JSON shape is not decoration. Facts that do not
+# parse, or that carry a category outside the list, are dropped; a reply that is
+# not a fact set at all leaves what is already stored untouched.
+memory_extraction = '''
+You are maintaining a short set of notes about one person, for a companion who
+speaks with them on the phone.
+
+You are given what is known so far and the conversation since. Return the full
+set of notes as it should now stand — keep what is still true, correct what has
+changed, drop what has stopped being true, and add what was learned.
+
+Rules:
+- Record only what the person stated or plainly implied. Never guess, and never
+  record anything the companion said about itself.
+- One short sentence per fact, in the third person: "The caller has a cat called
+  Coal."
+- Do not drop an `identity` fact unless the person contradicted it.
+- At most {{max_facts}} facts in total, and at most {{max_facts_per_category}}
+  in any one category. Keep the ones that would matter most next time.
+- Every category must be one of: {{categories}}.
+
+Reply with JSON and nothing else:
+
+{"facts": [{"category": "relationship", "content": "The caller has a cat called Coal."}]}
+'''
+
+# What the agent remembers about a caller between calls (ADR-0021, ADR-0022).
+#
+# On here, because a clean clone should demonstrate what this system does. It
+# costs a model call every few turns and it sends notes about the caller to the
+# model provider, so anyone running this for other people should read §4 of
+# docs/product.md before leaving it on.
+#
+# Omitting this section entirely leaves memory off: an existing configuration
+# file that predates it does not silently start extracting.
+[memory]
+enabled = true
+# Completed turns between extractions. Extraction runs off the turn path, so this
+# bounds cost and background load, not latency.
+extract_every_turns = 4
+# What bounds how long the prompt gets.
+max_facts = 40
+# Per category, so a talkative week of `situation` facts cannot evict the
+# caller's name.
+max_facts_per_category = 12
+# Which model does the extracting. Empty means the conversation model above. A
+# cheaper one is usually right: this is extraction, not conversation.
+model = ""
+
 # Who the agent is. At least one persona is needed before a call can start.
 # The id a client uses is derived from the name, so adding or reordering entries
 # leaves existing sessions pointing at the same persona.

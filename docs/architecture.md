@@ -68,7 +68,7 @@ personas, start call, join the room, end call.
 | `sonari-config` | `sonari.toml`: parsing, validation, watching | `providers` |
 | `providers` | VAD on sherpa-onnx; ElevenLabs recognition and synthesis | `voice` |
 | `voice` | The provider traits and the runtime the call path speaks to | `shared-kernel` |
-| `agent` | Prompt assembly, conversation history, the streaming model client | `shared-kernel` |
+| `agent` | Prompt assembly, conversation history, long-term memory, the streaming model client | `shared-kernel` |
 | `call/rtc` | LiveKit rooms, tokens, track binding, PCM in/out | `shared-kernel` |
 | `call/speech-runtime` | Per-session speech state, rounds, endpointing policy | `voice`, `agent` |
 | `call/worker` | The media plane: pipeline, mixer, playback | `call/*`, `voice` |
@@ -105,13 +105,24 @@ The ingress channel is bounded. Under load frames are dropped at ingress with a
 counter incremented, never buffered without limit. A commit is never dropped:
 losing a frame costs a word, losing the commit means the turn never ends.
 
+**What the agent remembers** is assembled into the prompt with the persona: one
+system message carrying the caller's fact set, then the recent turns. Reading it
+is one indexed local query and no network call; a read that fails is logged and
+the turn proceeds without it, because memory must never fail a call.
+
+Facts are written by an extraction that runs every N turns on a spawned task,
+never inside a turn (ADR-0022). It reads the recent turns and the current set,
+asks the model for a replacement set, and writes the difference. One runs per
+session at a time; a failure leaves the stored set as it was.
+
 ---
 
 ## 4. Configuration
 
 `sonari.toml` carries what an operator edits: personas and their scenes, the
-prompts wrapped around them, which models to ask for, and the endpointing
-parameters. It is watched — a change is parsed and validated, and only a valid
+prompts wrapped around them, which models to ask for, the endpointing
+parameters, and how memory behaves — whether it is on, how often it extracts,
+and how many facts it may hold. It is watched — a change is parsed and validated, and only a valid
 result replaces the live one. An invalid file at startup is fatal.
 
 A session resolves its persona once at call start and holds that snapshot, so
@@ -130,7 +141,7 @@ is sufficient to hold a conversation.
 There is no login. A `uid` is a human-typeable string; creating a session with
 one returns a token. `POST /api/session` and `GET /api/personas` are the two
 unauthenticated routes: one mints the token, the other lists what can be called
-(ADR-0020). Everything under `/api/call` requires the token. The identity is derived from the `uid` rather than
+(ADR-0020). Everything under `/api/call` and `/api/memory` requires the token. The identity is derived from the `uid` rather than
 allocated, so the same `uid` reaches the same history on any device without a
 user table.
 
@@ -145,10 +156,16 @@ new layer in front, not a change to the client contract.
 |---|---|
 | `call_sessions`, `call_events`, `call_event_outbox` | One row per call; events |
 | `llm_sessions`, `llm_messages`, `llm_usage_logs` | Conversation history and usage |
+| `agent_memory_facts` | What is remembered about a caller, per persona |
 | `app_error_*` | Recorded failures |
 
-pgvector extends this schema when long-term memory lands; the image is chosen to
-allow it without replacement.
+Long-term memory is a set of rows, not a vector index (ADR-0021): a category and
+one natural-language sentence, keyed on `(user_id, character_id)`. It is injected
+whole, so nothing searches it. The pgvector image stays for episodic memory,
+which is a later task; no column uses it today.
+
+The subsystem — the kinds of memory, how extraction and injection work, and the
+options that were rejected — is [memory.md](memory.md).
 
 ---
 
@@ -179,6 +196,8 @@ measurements come from release builds.
 | Model endpoint unreachable | Turn fails | Spoken error notice; session continues |
 | LiveKit connection lost | Session ends | Client reconnects and starts a new session |
 | PostgreSQL unreachable | Facts not persisted | Calls continue; persistence never blocks audio |
+| Memory read fails | The turn runs without the fact set | Logged; the agent is forgetful, not broken |
+| Memory extraction fails | Nothing new is remembered | Logged; the stored set is left untouched |
 
 ---
 
