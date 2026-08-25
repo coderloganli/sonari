@@ -1,5 +1,5 @@
 /*
- * Meilang MLA2 Hardware Simulator
+ * MLA2 Device Simulator
  * Protocol: MLA2-BLE V1
  *
  * BLE Service: 0000FFF0 | Write: 0000FFF1 | Notify: 0000FFF2
@@ -172,50 +172,50 @@ char deviceName[16] = "MLA2-0000";
 // Command codes
 // ============================================================
 
-#define CMD_VERSION        0x01
-#define CMD_CLAMP_SWITCH   0x41
-#define CMD_CLAMP_STRENGTH 0x42
-#define CMD_QUERY_CLAMP    0x43
-#define CMD_HEARTBEAT      0x44
-#define CMD_VIBRATION      0x45
-#define CMD_TEMPERATURE    0x46
-#define CMD_SET_CLAMP      0x47
-#define CMD_SET_VIB        0x48
-#define CMD_SET_HEAT       0x49
-#define CMD_QUERY_VIB      0x4A
-#define CMD_QUERY_HEAT     0x4B
-#define CMD_FORCE_OFF      0x4C
-#define CMD_EXTENSION      0x4D
-#define CMD_ROTATION       0x4E
-#define CMD_MAC_ADDR       0x4F
+#define CMD_VERSION     0x01
+#define CMD_GRIP_SWITCH 0x41
+#define CMD_GRIP_PARAMS 0x42
+#define CMD_QUERY_GRIP  0x43
+#define CMD_HEARTBEAT   0x44
+#define CMD_VIBRATION   0x45
+#define CMD_TEMPERATURE 0x46
+#define CMD_SET_GRIP    0x47
+#define CMD_SET_VIB     0x48
+#define CMD_SET_HEAT    0x49
+#define CMD_QUERY_VIB   0x4A
+#define CMD_QUERY_HEAT  0x4B
+#define CMD_FORCE_OFF   0x4C
+#define CMD_LINEAR      0x4D
+#define CMD_ROTATION    0x4E
+#define CMD_MAC_ADDR    0x4F
 
 // ============================================================
 // Device state
 // ============================================================
 
 struct DeviceState {
-    uint8_t  clampSwitch    = 0;
-    uint16_t clampWorkTime  = 0;
-    uint16_t clampParams[4] = {0};
-    uint8_t  clampGear      = 0;
-    uint8_t  vibStrength    = 0;
-    uint8_t  vibDuration    = 0;
-    uint8_t  vibManualStrength = 0;
-    uint8_t  vibManualGear  = 0;
-    uint8_t  tempSetting    = 0;
-    uint8_t  tempDuration   = 20;
-    uint8_t  heatLeft       = 0;
-    uint8_t  heatManualTemp = 0;
+    uint8_t  gripSwitch         = 0;
+    uint16_t gripWorkTime       = 0;
+    uint16_t gripParams[4]      = {0};
+    uint8_t  gripGear           = 0;
+    uint8_t  vibStrength        = 0;
+    uint8_t  vibDuration        = 0;
+    uint8_t  vibManualStrength  = 0;
+    uint8_t  vibManualGear      = 0;
+    uint8_t  tempSetting        = 0;
+    uint8_t  tempDuration       = 20;
+    uint8_t  heatLeft           = 0;
+    uint8_t  heatManualTemp     = 0;
     uint8_t  heatManualDuration = 0;
-    uint8_t  heatManualGear = 0;
-    uint8_t  extGear        = 0;
-    uint8_t  extDuration    = 0;
-    uint8_t  rotGear        = 0;
-    uint8_t  rotDuration    = 0;
-    uint8_t  position       = 1;
-    uint8_t  isEjaculation  = 0;
-    uint16_t reportCount    = 0;
-    uint8_t  heartbeatSeq   = 0;
+    uint8_t  heatManualGear     = 0;
+    uint8_t  linearGear         = 0;
+    uint8_t  linearDuration     = 0;
+    uint8_t  rotGear            = 0;
+    uint8_t  rotDuration        = 0;
+    uint8_t  orientation        = 1;
+    uint8_t  eventFlag          = 0;
+    uint16_t reportCount        = 0;
+    uint8_t  heartbeatSeq       = 0;
 } state;
 
 bool deviceConnected    = false;
@@ -267,14 +267,14 @@ void sendAccelReport() {
     pkt[9]  = state.tempSetting;
     pkt[10] = state.heatLeft;
     pkt[11] = state.vibStrength;
-    pkt[12] = state.clampGear;
+    pkt[12] = state.gripGear;
     pkt[13] = (state.tempSetting > 0 ? 0x01 : 0)
             | (state.vibStrength > 0 ? 0x02 : 0)
-            | (state.clampSwitch  > 0 ? 0x10 : 0);
-    pkt[14] = state.extGear;
-    pkt[15] = state.extDuration;
-    pkt[16] = state.position;
-    pkt[17] = state.isEjaculation;
+            | (state.gripSwitch  > 0 ? 0x10 : 0);
+    pkt[14] = state.linearGear;
+    pkt[15] = state.linearDuration;
+    pkt[16] = state.orientation;
+    pkt[17] = state.eventFlag;
     sendNotify(pkt, 18);
 }
 
@@ -328,22 +328,22 @@ void handleCommand(const uint8_t* data, size_t len) {
         break;
     }
 
-    case CMD_CLAMP_SWITCH: {
-        if (len >= 2) state.clampSwitch = data[1];
-        if (len >= 4) state.clampWorkTime = data[2] | (data[3] << 8);
-        state.clampGear = (state.clampSwitch > 0) ? 1 : 0;
-        uint8_t ack[4] = { CMD_CLAMP_SWITCH, state.clampSwitch,
-            (uint8_t)(state.clampWorkTime & 0xFF), (uint8_t)(state.clampWorkTime >> 8) };
+    case CMD_GRIP_SWITCH: {
+        if (len >= 2) state.gripSwitch = data[1];
+        if (len >= 4) state.gripWorkTime = data[2] | (data[3] << 8);
+        state.gripGear = (state.gripSwitch > 0) ? 1 : 0;
+        uint8_t ack[4] = { CMD_GRIP_SWITCH, state.gripSwitch,
+            (uint8_t)(state.gripWorkTime & 0xFF), (uint8_t)(state.gripWorkTime >> 8) };
         sendNotify(ack, 4);
         break;
     }
-    case CMD_CLAMP_STRENGTH: {
+    case CMD_GRIP_PARAMS: {
         for (int i = 0; i < 4 && (1 + i*2 + 1) < (int)len; i++)
-            state.clampParams[i] = data[1 + i*2] | (data[2 + i*2] << 8);
-        uint8_t ack[9] = { CMD_CLAMP_STRENGTH };
+            state.gripParams[i] = data[1 + i*2] | (data[2 + i*2] << 8);
+        uint8_t ack[9] = { CMD_GRIP_PARAMS };
         for (int i = 0; i < 4; i++) {
-            ack[1 + i*2] = state.clampParams[i] & 0xFF;
-            ack[2 + i*2] = (state.clampParams[i] >> 8) & 0xFF;
+            ack[1 + i*2] = state.gripParams[i] & 0xFF;
+            ack[2 + i*2] = (state.gripParams[i] >> 8) & 0xFF;
         }
         sendNotify(ack, 9);
         break;
@@ -363,16 +363,16 @@ void handleCommand(const uint8_t* data, size_t len) {
         sendNotify(ack, 3);
         break;
     }
-    case CMD_SET_CLAMP: {
+    case CMD_SET_GRIP: {
         for (int i = 0; i < 4 && (1 + i*2 + 1) < (int)len; i++)
-            state.clampParams[i] = data[1 + i*2] | (data[2 + i*2] << 8);
-        if (len >= 10) state.clampGear = data[9];
-        uint8_t ack[10] = { CMD_SET_CLAMP };
+            state.gripParams[i] = data[1 + i*2] | (data[2 + i*2] << 8);
+        if (len >= 10) state.gripGear = data[9];
+        uint8_t ack[10] = { CMD_SET_GRIP };
         for (int i = 0; i < 4; i++) {
-            ack[1 + i*2] = state.clampParams[i] & 0xFF;
-            ack[2 + i*2] = (state.clampParams[i] >> 8) & 0xFF;
+            ack[1 + i*2] = state.gripParams[i] & 0xFF;
+            ack[2 + i*2] = (state.gripParams[i] >> 8) & 0xFF;
         }
-        ack[9] = state.clampGear;
+        ack[9] = state.gripGear;
         sendNotify(ack, 10);
         break;
     }
@@ -391,13 +391,13 @@ void handleCommand(const uint8_t* data, size_t len) {
         sendNotify(ack, 4);
         break;
     }
-    case CMD_QUERY_CLAMP: {
-        uint8_t ack[10] = { CMD_QUERY_CLAMP };
+    case CMD_QUERY_GRIP: {
+        uint8_t ack[10] = { CMD_QUERY_GRIP };
         for (int i = 0; i < 4; i++) {
-            ack[1 + i*2] = state.clampParams[i] & 0xFF;
-            ack[2 + i*2] = (state.clampParams[i] >> 8) & 0xFF;
+            ack[1 + i*2] = state.gripParams[i] & 0xFF;
+            ack[2 + i*2] = (state.gripParams[i] >> 8) & 0xFF;
         }
-        ack[9] = state.clampGear;
+        ack[9] = state.gripGear;
         sendNotify(ack, 10);
         break;
     }
@@ -414,19 +414,19 @@ void handleCommand(const uint8_t* data, size_t len) {
     case CMD_FORCE_OFF: {
         state.vibStrength  = 0;
         state.tempSetting  = 0;
-        state.clampSwitch  = 0;
-        state.clampGear    = 0;
-        state.extGear      = 0;
+        state.gripSwitch  = 0;
+        state.gripGear    = 0;
+        state.linearGear      = 0;
         state.rotGear      = 0;
         uint8_t ack[1] = { CMD_FORCE_OFF };
         sendNotify(ack, 1);
         Serial.println("[STATE] Force OFF");
         break;
     }
-    case CMD_EXTENSION: {
-        if (len >= 2) state.extGear = data[1];
-        if (len >= 3) state.extDuration = data[2];
-        uint8_t ack[3] = { CMD_EXTENSION, state.extGear, state.extDuration };
+    case CMD_LINEAR: {
+        if (len >= 2) state.linearGear = data[1];
+        if (len >= 3) state.linearDuration = data[2];
+        uint8_t ack[3] = { CMD_LINEAR, state.linearGear, state.linearDuration };
         sendNotify(ack, 3);
         break;
     }
