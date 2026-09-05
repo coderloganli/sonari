@@ -16,6 +16,14 @@ use crate::{markers::Markers, score::wer::WordErrors};
 /// Stated in every report. Fifteen recordings cannot resolve a difference of a
 /// point or two, and a number without that caveat invites conclusions it cannot
 /// support.
+/// Which build produced a report. A debug build inflated one stage by half
+/// again, so a figure taken from one says nothing about the system.
+pub const BUILD_PROFILE: &str = if cfg!(debug_assertions) {
+    "debug"
+} else {
+    "release"
+};
+
 pub const PRECISION_NOTE: &str = "At this set size the confidence interval on WER is roughly ±5-10 points absolute. This is a regression tripwire and a category-failure detector, not an instrument for ranking systems a point apart.";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -102,6 +110,13 @@ pub struct BatchReport {
     /// service and does. A reader who does not know which is which can draw a
     /// conclusion the run cannot support.
     pub solver: String,
+    /// `release` or `debug`. A debug build inflated one stage by half again, so
+    /// every figure in this repository is a release figure — and a report that
+    /// does not say which it came from cannot be checked against that rule
+    /// later. Runs that predate this field have no `build` at all, which is the
+    /// honest answer for them, and they still deserialise.
+    #[serde(default)]
+    pub build: String,
     pub epochs: usize,
     pub note: String,
     pub config: ConfigSnapshot,

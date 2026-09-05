@@ -29,6 +29,52 @@ produced them still applies.
 
 ---
 
+## The first figures published — 854 ms answered, 1553 ms waited
+
+The first run of the whole evaluation set against the running service, over
+LiveKit, with a probe joining the room as the caller. These are the figures
+`README.md` and `docs/architecture.md` now carry; before this entry neither
+document held a number.
+
+Run: `evals/runs-live/2026-08-15T19-28-00.118098504+00-00.json`.
+
+| | p50 | p95 |
+|---|---|---|
+| **System response** — `speech_end` → first audio frame | **854 ms** | **976 ms** |
+| **Perceived latency** — `speech_last_voiced` → first audio frame | **1553 ms** | **1677 ms** |
+
+Both are under the two-second target, and the gap between them is the
+endpointing hangover: 700 ms of silence has to pass before a turn is called
+finished, and the caller waits through all of it. That is the largest single
+cost in what a caller experiences, and it is a policy value, not a slow
+component.
+
+Recognition quality over the same run: corpus WER 4.4%, p50 0%, p90 18%. At this
+set size the confidence interval is roughly ±5-10 points absolute — a regression
+tripwire and a category-failure detector, not an instrument for ranking systems a
+point apart.
+
+**What these figures cannot claim.** Read them with all of this:
+
+- **One epoch.** Each clip was run once, so p95 is an interpolation near the
+  worst sample rather than a tail. The set is 16 clips; percentiles over 48
+  samples would mean considerably more.
+- **15 clips, not 16.** `idle-force-agent` was added to the set after this run.
+- **The build is not recorded.** This run predates the `build` field, so the file
+  cannot say it came from a release build, and every figure in this repository is
+  supposed to be a release figure. The command used carried `--release`, but the
+  file is the evidence and the file is silent.
+- **14 of 15 samples succeeded.** `edge-8khz-stereo` failed, and by design: the
+  clip is 8 kHz stereo and the pipeline carries 16 kHz mono, so it was rejected
+  before it reached the service. The percentiles are over the 14. Two clips —
+  `edge-silence` and `edge-cough` — opened no turn, which is the outcome they
+  test for, and there were no false triggers.
+
+These stand until the set is re-run at three epochs from a build that says so,
+which is scheduled after the features still to be built land.
+
+---
+
 ## First measured turn on hosted inference — 1325 ms
 
 The whole path, one recording through the harness:

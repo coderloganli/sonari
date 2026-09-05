@@ -78,7 +78,28 @@ figure that has been measured.
 
 ## Measuring it
 
-The eval harness runs a recording through the whole pipeline without LiveKit, a
+Where it stands, over the evaluation set against the running service — a probe
+joining the LiveKit room as the caller:
+
+| | p50 | p95 |
+|---|---|---|
+| **System response** — you stop talking → the first audio frame leaves | 854 ms | 976 ms |
+| **Perceived latency** — your last voiced frame → the first audio frame leaves | 1553 ms | 1677 ms |
+
+Both figures are always reported together, because the difference between them
+is a decision rather than a cost: 700 ms of silence has to pass before a turn is
+called finished, and the caller sits through it.
+
+Recognition over the same run: corpus WER 4.4%, per-clip p50 0% and p90 18%. At
+16 clips that is a regression tripwire and not an instrument — the interval is
+roughly ±5-10 points absolute.
+
+Read the limits with the numbers: one epoch, 15 clips, and the run predates the
+field that records whether the build was a release one. They come from
+`evals/runs-live/2026-08-15T19-28-00.118098504+00-00.json`, and
+`crates/harness/OPTIMISATION-LOG.md` states what they can and cannot claim.
+
+The harness also runs a recording through the whole pipeline without LiveKit, a
 browser or a client, and prints what each stage cost:
 
 ```bash
@@ -86,7 +107,8 @@ SONARI_MODELS_DIR=./models cargo run --release -p harness -- recording.wav
 ```
 
 Latency figures come from release builds only — a debug build inflated one stage
-by half again, which is enough to point optimisation at the wrong place.
+by half again, which is enough to point optimisation at the wrong place. Each run
+records which it was.
 
 ## Development
 

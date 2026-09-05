@@ -309,6 +309,7 @@ mod tests {
         BatchReport {
             run_at: "2026-08-13T00:00:00Z".to_owned(),
             solver: "live".to_owned(),
+            build: "release".to_owned(),
             epochs: 1,
             note: "note".to_owned(),
             config: Default::default(),

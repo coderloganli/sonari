@@ -17,7 +17,7 @@ exists to make that testable.
 
 ## 2. Scope
 
-**v1** — one voice conversation, measured.
+One voice conversation, measured.
 
 | | |
 |---|---|
@@ -27,9 +27,11 @@ exists to make that testable.
 | Personas | Operator-authored: a character and the scene they are in |
 | Identity | A `uid` the caller enters or is assigned |
 | Memory | What the agent knows about the caller survives the call, per persona |
-| Client | Android — enter a `uid`, choose a character and scene, talk |
-| Trying it by hand | A browser test client at `/dev`, served by the binary itself (ADR-0018) |
+| Client | The browser test client at `/dev`, served by the binary itself (ADR-0018) — enter a `uid`, choose a character and scene, talk |
 | Evaluation | An automated harness and a headless caller, both runnable in CI |
+
+**Still to build**: the Android client — it is the product surface, and until it
+exists the `/dev` page is how a person reaches a call.
 
 **v2** — work on how human the agent sounds, and episodic memory: recalling what
 happened in a particular past call, rather than what is true about the caller.
@@ -121,6 +123,6 @@ and it is stated here rather than left to be discovered.
 | Searching past conversations | What a companion must know is unconditional, not similar to the current sentence; retrieval belongs to episodic memory, which is v2 (ADR-0021) |
 | Editing memory by hand | A caller can read and delete what is held; authoring it is a product surface nobody has asked for |
 | Self-hosted models | The engineering interest is the pipeline, not operating GPUs (ADR-0014) |
-| Tool calling | v1 is conversation. Tools add a second round trip inside a turn, which a phone call feels |
+| Tool calling | This is conversation. Tools add a second round trip inside a turn, which a phone call feels |
 | Multi-tenancy | One deployment, one operator, personas in a file |
-| A web *product* client | Android is the product surface. A browser page is shipped at `/dev` as a test tool and is named one (ADR-0018) — it exists because a person needs to hear the call, which no automated test can judge |
+| A web *product* client | Android is the product surface. The browser page shipped at `/dev` is a test tool and is named one (ADR-0018) — it exists because a person needs to hear the call, which no automated test can judge, and it is not on its way to becoming the product |
