@@ -90,7 +90,7 @@ flushed until the caller hangs up. See that ticket.
   or holds the runtime differently from the two-process path this was extracted
   from. That path is new in sonari (ADR-0002 merged the planes), and both bugs
   found so far have been in code the extraction introduced rather than code
-  combrabo had proven.
+  the upstream project had proven.
 
 ## Reproducing
 
