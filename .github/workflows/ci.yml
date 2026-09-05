@@ -36,6 +36,11 @@ jobs:
       # need credentials or a running stack skip themselves.
       - name: Test the evaluation harness
         run: cargo test -p harness
+      # The conversation core and the HTTP surface. Both are already compiled by
+      # the step above, so this costs one link each, and neither needs a database
+      # or a key: the tests that would run against Postgres skip themselves.
+      - name: Test the conversation core and the HTTP surface
+        run: cargo test -p agent -p api
 
   compose:
     runs-on: ubuntu-latest

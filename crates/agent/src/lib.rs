@@ -9,17 +9,22 @@ pub mod ports;
 
 pub use adapters::postgres::{
     PostgresAgentArchiveRepository, PostgresAgentMessageRepository, PostgresAgentSessionRepository,
-    PostgresAgentSettingsRepository, PostgresAgentUsageLogRepository,
+    PostgresAgentSettingsRepository, PostgresAgentUsageLogRepository, PostgresMemoryStore,
     PostgresPartnerConversationPromptOverrideRepository, PostgresPromptTemplateRepository,
 };
 pub use application::{
     AgentDependencies, AgentRuntimeUseCases, AgentService, ChatCommand, ChatOutcome,
+    MemoryDependencies, MemoryPolicy, MemoryService, MemoryUseCases,
     PartnerConversationPromptConfigView, UpdateAdminConfigCommand,
     UpdatePartnerConversationPromptConfigCommand,
 };
 pub use domain::{
     AgentArchiveMessage, AgentCallerIdentity, AgentMessage, AgentMessageArchive, AgentSession,
-    LlmProviderConfig, LlmUsageLog, LlmUsageStats, MessageRole, PartnerConversationPromptOverride,
-    PromptTemplate, PromptTemplateKey, ProviderKey, SessionUsageSummary,
+    ExtractedFact, LlmProviderConfig, LlmUsageLog, LlmUsageStats, MemoryCategory, MemoryFact,
+    MessageRole, PartnerConversationPromptOverride, PromptTemplate, PromptTemplateKey, ProviderKey,
+    SessionUsageSummary,
 };
-pub use ports::{AgentCallControlPort, CreateAgentSessionRequest, CreateAgentSessionResult};
+pub use ports::{
+    AgentCallControlPort, CreateAgentSessionRequest, CreateAgentSessionResult,
+    MemoryExtractionScheduler, MemoryStore,
+};

@@ -53,13 +53,33 @@ impl ConfigLlmProviders {
                 "llm.model must be set in the configuration file",
             ));
         }
+        // The two slots share an endpoint and a key, and differ in what is being
+        // asked for. Extraction is a parsing job with one right answer, so its
+        // sampling is fixed here rather than offered as a dial: a warmer
+        // extraction model invents facts about a person.
+        let (model_name, temperature, frequency_penalty) = match provider_key {
+            ProviderKey::Conversation => (
+                settings.llm.model.clone(),
+                settings.llm.temperature,
+                settings.llm.frequency_penalty,
+            ),
+            ProviderKey::Assistant => {
+                let model = settings.memory.model.trim();
+                let model = if model.is_empty() {
+                    settings.llm.model.clone()
+                } else {
+                    model.to_owned()
+                };
+                (model, 0.0, 0.0)
+            }
+        };
         Ok(LlmProviderConfig {
             provider_key,
             endpoint_url: self.endpoint.base_url.clone(),
             api_key: self.endpoint.api_key.clone(),
-            model_name: settings.llm.model.clone(),
-            temperature: settings.llm.temperature,
-            frequency_penalty: settings.llm.frequency_penalty,
+            model_name,
+            temperature,
+            frequency_penalty,
             updated_at: chrono::Utc::now(),
         })
     }

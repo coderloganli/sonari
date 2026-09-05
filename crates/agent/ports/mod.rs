@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use shared_kernel::AppResult;
 
 use crate::domain::{
-    AgentCallerIdentity, AgentMessage, AgentMessageArchive, AgentSession, LlmProviderConfig,
-    LlmUsageLog, LlmUsageStats, PartnerConversationPromptOverride, PromptTemplate,
-    PromptTemplateKey, ProviderKey, SessionUsageSummary,
+    AgentCallerIdentity, AgentMessage, AgentMessageArchive, AgentSession, ExtractedFact,
+    LlmProviderConfig, LlmUsageLog, LlmUsageStats, MemoryFact, PartnerConversationPromptOverride,
+    PromptTemplate, PromptTemplateKey, ProviderKey, SessionUsageSummary,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +108,74 @@ pub trait UsageLogRepository: Send + Sync {
     async fn create(&self, log: &LlmUsageLog) -> AppResult<LlmUsageLog>;
     async fn get_usage_stats(&self) -> AppResult<LlmUsageStats>;
     async fn summarize_session(&self, session_id: &str) -> AppResult<SessionUsageSummary>;
+}
+
+/// Where the fact set lives. Whole sets in, whole sets out: ADR-0021 made the
+/// set the unit, so nothing here reads or writes a single fact.
+#[async_trait]
+pub trait MemoryStore: Send + Sync {
+    /// The facts one persona knows about one caller.
+    async fn load(&self, user_id: i64, character_id: i64) -> AppResult<Vec<MemoryFact>>;
+    /// Everything held about a caller, across personas. For the caller's own
+    /// reading, not for a prompt.
+    async fn load_all(&self, user_id: i64) -> AppResult<Vec<MemoryFact>>;
+    /// Replaces the set in one transaction. A fact whose content is unchanged
+    /// keeps its `first_seen_at`; one that is absent is deleted.
+    async fn replace(
+        &self,
+        user_id: i64,
+        character_id: i64,
+        source_session_id: &str,
+        facts: &[ExtractedFact],
+    ) -> AppResult<()>;
+    /// Forgets one persona's facts, or all of them when `character_id` is
+    /// `None`. Returns how many rows went.
+    async fn delete(&self, user_id: i64, character_id: Option<i64>) -> AppResult<u64>;
+}
+
+#[async_trait]
+impl<T> MemoryStore for std::sync::Arc<T>
+where
+    T: MemoryStore + ?Sized,
+{
+    async fn load(&self, user_id: i64, character_id: i64) -> AppResult<Vec<MemoryFact>> {
+        (**self).load(user_id, character_id).await
+    }
+    async fn load_all(&self, user_id: i64) -> AppResult<Vec<MemoryFact>> {
+        (**self).load_all(user_id).await
+    }
+    async fn replace(
+        &self,
+        user_id: i64,
+        character_id: i64,
+        source_session_id: &str,
+        facts: &[ExtractedFact],
+    ) -> AppResult<()> {
+        (**self)
+            .replace(user_id, character_id, source_session_id, facts)
+            .await
+    }
+    async fn delete(&self, user_id: i64, character_id: Option<i64>) -> AppResult<u64> {
+        (**self).delete(user_id, character_id).await
+    }
+}
+
+/// Starts an extraction without waiting for it (ADR-0022).
+///
+/// Deliberately not `async`: the turn path calls this and moves on. How the work
+/// actually leaves the current task is the composition root's business, and the
+/// only place that knows about spawning.
+pub trait MemoryExtractionScheduler: Send + Sync {
+    fn schedule(&self, session_id: &str);
+}
+
+impl<T> MemoryExtractionScheduler for std::sync::Arc<T>
+where
+    T: MemoryExtractionScheduler + ?Sized,
+{
+    fn schedule(&self, session_id: &str) {
+        (**self).schedule(session_id)
+    }
 }
 
 #[async_trait]

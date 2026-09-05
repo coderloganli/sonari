@@ -115,6 +115,30 @@ pub async fn run() -> Result<()> {
         .start()
         .await
         .context("failed to start call event outbox publisher")?;
+    let memory_store = Arc::new(agent::PostgresMemoryStore::new(pool.clone()));
+    let memory_policy = {
+        let configured = &settings.get().memory;
+        agent::MemoryPolicy {
+            enabled: configured.enabled,
+            extract_every_turns: configured.extract_every_turns,
+            max_facts: configured.max_facts,
+            max_facts_per_category: configured.max_facts_per_category,
+        }
+    };
+    let memory_service = Arc::new(agent::MemoryService::new(agent::MemoryDependencies {
+        memory: memory_store.clone(),
+        sessions: Arc::new(agent::PostgresAgentSessionRepository::new(pool.clone())),
+        messages: Arc::new(agent::PostgresAgentMessageRepository::new(pool.clone())),
+        providers: llm_providers.clone(),
+        templates: Arc::new(crate::prompts::ConfigPromptTemplates::new(settings.clone())),
+        gateway: Arc::new(agent::adapters::llm::ReqwestLlmGateway::default()),
+        clock: Arc::new(SystemClock),
+        policy: memory_policy.clone(),
+    }));
+    let memory_use_cases: Arc<dyn agent::MemoryUseCases> = memory_service.clone();
+    let extraction_scheduler: Arc<dyn agent::MemoryExtractionScheduler> = Arc::new(
+        crate::memory::SpawningExtractionScheduler::new(memory_service.clone()),
+    );
     let agent_service = Arc::new(agent::AgentService::new(agent::AgentDependencies {
         providers: llm_providers.clone(),
         templates: Arc::new(crate::prompts::ConfigPromptTemplates::new(settings.clone())),
@@ -129,6 +153,9 @@ pub async fn run() -> Result<()> {
         ids: StaticIdGenerator,
         clock: SystemClock,
         settings: Box::new(agent::PostgresAgentSettingsRepository::new(pool.clone())),
+        memory: memory_store,
+        extraction: extraction_scheduler,
+        memory_policy,
     }));
     let agent_call_control: Arc<dyn agent::AgentCallControlPort> = agent_service.clone();
     let agent_runtime: Arc<dyn agent::AgentRuntimeUseCases> = agent_service.clone();
@@ -240,6 +267,7 @@ pub async fn run() -> Result<()> {
         call_service: call_service.clone(),
         call_log_service,
         persona_catalog,
+        memory_service: memory_use_cases,
     });
     tracing::info!("services assembled");
 

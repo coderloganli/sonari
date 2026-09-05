@@ -35,7 +35,7 @@ pub enum PromptTemplateKey {
     ConversationSystem2,
     ConversationSystem3,
     ConversationWelcomeUser,
-    AssistantSystem,
+    MemoryExtraction,
 }
 
 impl PromptTemplateKey {
@@ -45,7 +45,7 @@ impl PromptTemplateKey {
             "conversation_system_2" => Some(Self::ConversationSystem2),
             "conversation_system_3" => Some(Self::ConversationSystem3),
             "conversation_welcome_user" => Some(Self::ConversationWelcomeUser),
-            "assistant_system" => Some(Self::AssistantSystem),
+            "memory_extraction" => Some(Self::MemoryExtraction),
             _ => None,
         }
     }
@@ -56,7 +56,7 @@ impl PromptTemplateKey {
             Self::ConversationSystem2 => "conversation_system_2",
             Self::ConversationSystem3 => "conversation_system_3",
             Self::ConversationWelcomeUser => "conversation_welcome_user",
-            Self::AssistantSystem => "assistant_system",
+            Self::MemoryExtraction => "memory_extraction",
         }
     }
 }
@@ -165,6 +165,82 @@ pub struct AgentMessageArchive {
     pub prompt_tokens: i32,
     pub completion_tokens: i32,
     pub archived_at: DateTime<Utc>,
+}
+
+/// What kind of thing is remembered. A closed list, because eviction needs a
+/// quota to be fair about and the injected text is grouped by it (ADR-0021).
+///
+/// The order is the order facts are rendered in: what is stable first, what is
+/// passing last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryCategory {
+    /// Who the caller is: name, age, where they live, what they do.
+    Identity,
+    /// Who is around them: family, friends, pets, colleagues.
+    Relationship,
+    /// What they like, dislike, or will not talk about.
+    Preference,
+    /// What is going on right now. This is the category that expires.
+    Situation,
+    /// What was agreed between them and the agent.
+    Commitment,
+}
+
+impl MemoryCategory {
+    /// Every category, in rendering order.
+    pub const ALL: [Self; 5] = [
+        Self::Identity,
+        Self::Relationship,
+        Self::Preference,
+        Self::Situation,
+        Self::Commitment,
+    ];
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "identity" => Some(Self::Identity),
+            "relationship" => Some(Self::Relationship),
+            "preference" => Some(Self::Preference),
+            "situation" => Some(Self::Situation),
+            "commitment" => Some(Self::Commitment),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Identity => "identity",
+            Self::Relationship => "relationship",
+            Self::Preference => "preference",
+            Self::Situation => "situation",
+            Self::Commitment => "commitment",
+        }
+    }
+}
+
+/// One thing the agent knows about a caller, as stored.
+///
+/// The row is structured; the sentence is not. What is worth remembering about a
+/// person is an open set, so `content` stays natural language (ADR-0021).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryFact {
+    pub user_id: i64,
+    pub character_id: i64,
+    pub category: MemoryCategory,
+    pub content: String,
+    /// When this fact was first learned. Survives a rewrite that keeps it.
+    pub first_seen_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    /// The session whose extraction last confirmed it.
+    pub source_session_id: String,
+}
+
+/// A fact as the model produced it, before it is anyone's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtractedFact {
+    pub category: MemoryCategory,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

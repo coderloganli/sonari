@@ -3,6 +3,7 @@ mod call;
 mod dev_client;
 mod error;
 mod health;
+mod memory;
 mod personas;
 mod response;
 mod router;

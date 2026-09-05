@@ -241,8 +241,12 @@ impl WorkerService {
         let launch = work
             .launch
             .ok_or_else(|| anyhow!("start work missing launch spec"))?;
-        // 进程内编排:launch 携带 speech bootstrap(后端 COMBRABO_INPROCESS_SPEECH 启用)时,
-        // worker 进程内运行 speech-runtime(消除每帧音频 HTTP);否则回退旧的远端编排。
+        // Which speech path this session takes is decided by the launch spec alone:
+        // `SpeechBootstrapComposerPort::compose` returns an Option, and a Some means
+        // the speech-runtime is built and driven inside this worker process, which is
+        // what removes the per-frame audio HTTP hop. A None falls back to the remote
+        // handler below. No environment variable is involved — an earlier comment here
+        // named one that no code has ever read.
         let handler: Arc<dyn SpeechHandler> = if let Some(bootstrap) = &launch.speech {
             tracing::info!(
                 session_id = work.session_id,

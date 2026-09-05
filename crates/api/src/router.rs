@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use agent::MemoryUseCases;
 use auth::ports::TokenService;
 use axum::{Router, middleware, routing::get};
 use call::{CallLogUseCases, CallUseCases};
@@ -17,6 +18,7 @@ pub struct ModuleServices {
     pub call_service: Arc<dyn CallUseCases>,
     pub call_log_service: Arc<dyn CallLogUseCases>,
     pub persona_catalog: Arc<dyn CharacterCatalogReadPort>,
+    pub memory_service: Arc<dyn MemoryUseCases>,
 }
 
 pub fn build_router() -> Router {
@@ -35,6 +37,10 @@ pub fn build_router_with_modules(services: ModuleServices) -> Router {
         .merge(build_session_router(services.token_service.clone()))
         .merge(build_personas_router(services.persona_catalog))
         .merge(build_dev_client_router())
+        .merge(crate::memory::build_memory_router(
+            services.memory_service,
+            services.token_service.clone(),
+        ))
         .merge(build_call_router(
             services.call_service,
             services.call_log_service,
@@ -53,6 +59,7 @@ mod tests {
 
     use std::sync::Arc;
 
+    use agent::{MemoryFact, MemoryUseCases};
     use async_trait::async_trait;
     use auth::ports::{TokenPairView, TokenService};
     use axum::{
@@ -127,6 +134,17 @@ mod tests {
     }
 
     #[async_trait]
+    impl MemoryUseCases for Unused {
+        async fn list(&self, _user_id: i64) -> AppResult<Vec<MemoryFact>> {
+            Ok(Vec::new())
+        }
+
+        async fn forget(&self, _user_id: i64, _character_id: Option<i64>) -> AppResult<u64> {
+            Ok(0)
+        }
+    }
+
+    #[async_trait]
     impl CharacterCatalogReadPort for Unused {
         async fn list_characters(&self) -> AppResult<Vec<CharacterSummary>> {
             Ok(vec![CharacterSummary {
@@ -138,15 +156,20 @@ mod tests {
     }
 
     async fn status_of(path: &str) -> StatusCode {
+        status_of_method("GET", path).await
+    }
+
+    async fn status_of_method(method: &str, path: &str) -> StatusCode {
         let router = build_router_with_modules(ModuleServices {
             token_service: Arc::new(Unused),
             call_service: Arc::new(Unused),
             call_log_service: Arc::new(Unused),
             persona_catalog: Arc::new(Unused),
+            memory_service: Arc::new(Unused),
         });
         let request = Request::builder()
             .uri(path)
-            .method("GET")
+            .method(method)
             .body(Body::empty())
             .expect("build request");
         router
@@ -167,5 +190,16 @@ mod tests {
     #[tokio::test]
     async fn the_application_lists_personas_without_a_token() {
         assert_eq!(status_of("/api/personas").await, StatusCode::OK);
+    }
+
+    /// Test case 21 — the application serves the memory routes. A route tested
+    /// only against its own router can be absent from the one the binary serves.
+    #[tokio::test]
+    async fn the_application_serves_the_memory_routes() {
+        assert_ne!(status_of("/api/memory").await, StatusCode::NOT_FOUND);
+        assert_ne!(
+            status_of_method("DELETE", "/api/memory").await,
+            StatusCode::NOT_FOUND
+        );
     }
 }

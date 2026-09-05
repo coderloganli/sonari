@@ -45,6 +45,9 @@ Reading the whole directory costs roughly 400 tokens per record. Reading this in
 | [0018](0018-browser-test-client-inside-the-binary.md) | A browser test client is served by the binary at `/dev`, assets compiled in; Android stays the product surface | Accepted | `ops` `scope` | 2026-08-16 |
 | [0019](0019-vendor-the-livekit-browser-sdk.md) | The LiveKit browser SDK is vendored at a pinned version rather than fetched from a CDN or built with npm | Accepted | `ops` `audio` | 2026-08-16 |
 | [0020](0020-personas-are-listed-over-the-api.md) | `GET /api/personas` publishes the derived persona ids, unauthenticated, so no client recomputes them | Accepted | `scope` `ops` | 2026-08-16 |
+| [0021](0021-memory-is-extracted-facts-not-retrieval.md) | Long-term memory is a bounded set of categorised natural-language facts, injected whole; nothing is searched | Accepted | `data` `latency` `scope` | 2026-08-17 |
+| [0022](0022-memory-extraction-runs-off-the-turn-path.md) | Facts are extracted every N turns on a spawned task; the turn path schedules and never awaits | Accepted | `latency` `process` `data` | 2026-08-17 |
+| [0023](0023-memory-is-scoped-to-caller-and-persona.md) | The fact set is keyed on `(user_id, character_id)`; a persona sees only what it was told | Accepted | `data` `scope` | 2026-08-17 |
 
 ## Superseded
 
@@ -56,7 +59,7 @@ Reading the whole directory costs roughly 400 tokens per record. Reading this in
 
 ## By tag
 
-`process` 0002 0003 0004 0005 0006 0013 0014 · `audio` 0003 0004 0005 0007 0009 0014 0016 0019 · `latency` 0003 0004 0009 0010 0014 0016 0017 · `providers` 0005 0006 0008 0009 0014 0015 0016 · `data` 0011 0012 · `ops` 0006 0007 0010 0012 0017 0018 0019 0020 · `scope` 0001 0002 0008 0011 0013 0015 0018 0020
+`process` 0002 0003 0004 0005 0006 0013 0014 0022 · `audio` 0003 0004 0005 0007 0009 0014 0016 0019 · `latency` 0003 0004 0009 0010 0014 0016 0017 0021 0022 · `providers` 0005 0006 0008 0009 0014 0015 0016 · `data` 0011 0012 0021 0022 0023 · `ops` 0006 0007 0010 0012 0017 0018 0019 0020 · `scope` 0001 0002 0008 0011 0013 0015 0018 0020 0021 0023
 
 Tags are a closed vocabulary. Adding one requires a decision about what it means.
 

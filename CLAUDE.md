@@ -9,6 +9,7 @@ Documentation is tiered so that answering a question costs a bounded amount of c
 | Question | Read |
 |---|---|
 | How is the system built? Where does my code go? | `docs/architecture.md` — always current, self-contained |
+| What does the agent remember, and why that shape? | `docs/memory.md` — the one subsystem document; carries the options that were rejected as well as the ones taken |
 | What was decided about X? | `docs/adr/README.md` index only. The `Decision` column answers most questions outright |
 | Why was it decided that way? What was rejected? | The one or two specific ADRs the index points to |
 | Which decisions touch area X? | The `By tag` line in `docs/adr/README.md` |

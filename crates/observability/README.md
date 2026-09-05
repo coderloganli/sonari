@@ -68,11 +68,8 @@ powershell -ExecutionPolicy Bypass -File backend/scripts/observability.ps1 urls 
 
 LAN-facing surfaces use the same ports on the machine IP, for example `http://192.168.0.95:23000`.
 
-External alert receiver contract:
-- [docs/alert-webhook-contract.md](/C:/dev/combrabo-lite/docs/alert-webhook-contract.md:1)
-
-Cloud deployment templates:
-- [deploy/cloud/observability/README.md](/C:/dev/combrabo-lite/deploy/cloud/observability/README.md:1)
+External alert receiver contract and cloud deployment templates live in the
+upstream private repository and are not part of this extraction.
 
 ## What To Query Where
 
@@ -152,26 +149,26 @@ Primary surface:
 - Prometheus expressions
 
 Core metrics:
-- `combrabo_http_requests_total`
-- `combrabo_http_request_duration_seconds`
-- `combrabo_debug_ingest_events_total`
-- `combrabo_app_errors_total`
-- `combrabo_call_event_consumer_lag`
-- `combrabo_runtime_start_failures_total`
-- `combrabo_bot_speech_interruptions_total`
+- `http_requests_total`
+- `http_request_duration_seconds`
+- `debug_ingest_events_total`
+- `app_errors_total`
+- `call_event_consumer_lag`
+- `runtime_start_failures_total`
+- `bot_speech_interruptions_total`
 
 PromQL examples:
 
 ```promql
-sum by (method, path, status) (rate(combrabo_http_requests_total[5m]))
+sum by (method, path, status) (rate(http_requests_total[5m]))
 ```
 
 ```promql
-sum(rate(combrabo_app_errors_total[15m]))
+sum(rate(app_errors_total[15m]))
 ```
 
 ```promql
-max(combrabo_call_event_consumer_lag)
+max(call_event_consumer_lag)
 ```
 
 ### App Errors
@@ -207,7 +204,7 @@ Use these for:
 
 1. Search Loki for `client debug events accepted`
 2. Filter by `request_id` or `session_id`
-3. Check `combrabo_debug_ingest_events_total`
+3. Check `debug_ingest_events_total`
 
 ### App error issue
 

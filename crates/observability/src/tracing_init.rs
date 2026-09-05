@@ -71,7 +71,7 @@ fn build_otlp_tracer(service_name: &str) -> Result<Option<SdkTracer>> {
             KeyValue::new("service.instance.id", service_instance_id()),
             KeyValue::new(
                 "deployment.environment",
-                std::env::var("COMBRABO_STACK").unwrap_or_else(|_| "unknown".to_owned()),
+                std::env::var("SONARI_STACK").unwrap_or_else(|_| "unknown".to_owned()),
             ),
         ])
         .build();
@@ -85,14 +85,14 @@ fn build_otlp_tracer(service_name: &str) -> Result<Option<SdkTracer>> {
 }
 
 fn service_instance_id() -> String {
-    std::env::var("COMBRABO_INSTANCE_ID")
+    std::env::var("SONARI_INSTANCE_ID")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| format!("{}-{}", std::process::id(), service_suffix()))
 }
 
 fn service_suffix() -> String {
-    std::env::var("COMBRABO_SERVICE")
+    std::env::var("SONARI_SERVICE")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "service".to_owned())

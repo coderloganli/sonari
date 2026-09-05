@@ -126,6 +126,7 @@ fn settings_are_replaced_whole() {
         llm: Default::default(),
         prompts: Default::default(),
         endpointing: Default::default(),
+        memory: Default::default(),
     };
     let snapshot = std::sync::Arc::new(settings);
     let second = snapshot.clone();
