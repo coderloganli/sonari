@@ -9,9 +9,12 @@ not bring them. They live in the main checkout. First thing after creating a
 worktree:
 
 ```bash
-cp ../main/.env ../main/sonari.toml .
-mkdir -p models && cp ../main/models/silero_vad.onnx models/
+cp ../../main/sonari/.env ../../main/sonari/sonari.toml .
+mkdir -p models && cp ../../main/sonari/models/silero_vad.onnx models/
 ```
+
+Two levels up, not one: a worktree sits at `<project>/<branch>/sonari/`, and
+`main/` is the sibling of `<branch>`, not of the repository inside it.
 
 | File | Holds | Tracked template |
 |---|---|---|
